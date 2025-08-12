@@ -23,7 +23,7 @@ class IgnoreRequest(Exception):
 def safe_json(data):
     return json.loads(str(data, 'utf-8'))
 
-async def send_ping(ident, mqtt):
+async def send_ping(mqtt, ident):
     await mqtt.publish(ident + '/ping')
 
 async def forward_request(mqtt, ident, data):
@@ -97,7 +97,7 @@ async def forward_dtu(mqtt, ident, data):
     params = data.get('params')
 
     if not params:
-        print('Error: invalid data', data)
+        await send_ping(mqtt, ident)
         return
 
     out = {}
