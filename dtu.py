@@ -5,6 +5,7 @@ import re
 import crc
 from config import host, port, username, password
 import pack
+import logging
 
 from collections import defaultdict
 
@@ -14,6 +15,8 @@ from collections import defaultdict
 {"method": "modbus_req", "addr": "01", "op": "06", "reg": "000F", "data": 1, "pack_func": "uint16_AB", "crc": true}
 '''
 
+logger = logging.getLogger('dtu')
+
 class InvalidRequest(Exception):
     pass
 
@@ -21,14 +24,18 @@ class IgnoreRequest(Exception):
     pass
 
 def safe_json(data):
-    return json.loads(str(data, 'utf-8'))
+    try:
+        return json.loads(str(data, 'utf-8', errors='ignore'))
+    except Exception as exc:
+        logger.error(data)
+        logger.exception(exc)
 
 async def send_ping(mqtt, ident):
     await mqtt.publish(ident + '/ping')
 
 async def forward_request(mqtt, ident, data):
     def print_error():
-        print('Error: invalid request', data)
+        logger.error('Error: invalid request' + str(data))
         raise InvalidRequest()
 
     if data.get('method') != 'modbus_req':
@@ -119,12 +126,12 @@ async def main():
             idx = topic.find('/', 1)
             idx = topic.find('/', idx + 1)
             ident = topic[:idx]
-            print('Device:', ident)
+            logger.debug('Device: ' + ident)
             topic = topic[idx:]
 
             payload = message.payload.strip()
 
-            print(topic, payload)
+            logger.debug(f'{topic}:{payload}')
 
             if topic.find('request') > -1:
                 req_id = topic.split('/')[-1]
@@ -150,5 +157,6 @@ async def main():
 
                 continue
 
-
+formatter = "[%(asctime)s] %(name)s {%(filename)s:%(lineno)d} %(levelname)s - %(message)s"
+logging.basicConfig(level=logging.DEBUG, format=formatter)
 asyncio.run(main())
