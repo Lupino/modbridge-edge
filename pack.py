@@ -1,5 +1,6 @@
 import struct
 
+
 def get_pack_func(format):
     if format == 'uint16_AB':
         return '>H'
@@ -24,11 +25,16 @@ def get_pack_func(format):
 
     return ''
 
+
 def pack_uint32_BADC(value32):
-    return struct.pack('<H', value32 & 0xFFFF) + struct.pack('<H', (value32 >> 16) & 0xFFFF)
+    return struct.pack('<H', value32 & 0xFFFF) + struct.pack(
+        '<H', (value32 >> 16) & 0xFFFF)
+
 
 def pack_uint32_CDAB(value32):
-    return struct.pack('>H', value32 & 0xFFFF) + struct.pack('>H', (value32 >> 16) & 0xFFFF)
+    return struct.pack('>H', value32 & 0xFFFF) + struct.pack(
+        '>H', (value32 >> 16) & 0xFFFF)
+
 
 def pack_int32_BADC(value):
     """

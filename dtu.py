@@ -8,20 +8,43 @@ import pack
 import logging
 
 from collections import defaultdict
-
 '''
-{"method": "modbus_req", "modbus": "0106000f0001", "crc": true}
-{"method": "modbus_req", "addr": "01", "op": "06", "reg": "000F", "data": "0001", "crc": true}
-{"method": "modbus_req", "addr": "01", "op": "06", "reg": "000F", "data": 1, "pack_func": "uint16_AB", "crc": true}
+{
+  "method": "modbus_req",
+  "modbus": "0106000f0001",
+  "crc": true
+}
+
+{
+  "method": "modbus_req",
+  "addr": "01",
+  "op": "06",
+  "reg": "000F",
+  "data": "0001",
+  "crc": true
+}
+
+{
+  "method": "modbus_req",
+  "addr": "01",
+  "op": "06",
+  "reg": "000F",
+  "data": 1,
+  "pack_func": "uint16_AB",
+  "crc": true
+}
 '''
 
 logger = logging.getLogger('dtu')
 
+
 class InvalidRequest(Exception):
     pass
 
+
 class IgnoreRequest(Exception):
     pass
+
 
 def safe_json(data):
     try:
@@ -30,10 +53,13 @@ def safe_json(data):
         logger.error(data)
         logger.exception(exc)
 
+
 async def send_ping(mqtt, ident):
     await mqtt.publish(ident + '/ping')
 
+
 async def forward_request(mqtt, ident, data):
+
     def print_error():
         logger.error('Error: invalid request' + str(data))
         raise InvalidRequest()
@@ -74,9 +100,11 @@ async def forward_request(mqtt, ident, data):
 
     await mqtt.publish(ident + '/dtu/sub', payload=modbus_bytes)
 
+
 async def send_response_error(mqtt, ident, req_id):
     data = {'err': 'Invalid request'}
     await mqtt.publish(ident + '/response/' + req_id, payload=json.dumps(data))
+
 
 async def forward_response(mqtt, ident, req_id, payload):
     data = {'modbus': payload.hex()}
@@ -98,8 +126,6 @@ def normal_key(key):
     return re_space.sub('_', out)
 
 
-
-
 async def forward_dtu(mqtt, ident, data):
     params = data.get('params')
 
@@ -113,9 +139,9 @@ async def forward_dtu(mqtt, ident, data):
     await mqtt.publish(ident + '/telemetry', payload=json.dumps(out))
 
 
-
 async def main():
-    async with aiomqtt.Client(host, port, username=username, password=password) as mqtt:
+    async with aiomqtt.Client(host, port, username=username,
+                              password=password) as mqtt:
         await mqtt.subscribe('/+/+/dtu/#')
         await mqtt.subscribe('/+/+/request/#')
         # await mqtt.subscribe('/+/+/pong/#')
@@ -157,6 +183,7 @@ async def main():
 
                 continue
 
-formatter = "[%(asctime)s] %(name)s {%(filename)s:%(lineno)d} %(levelname)s - %(message)s"
+formatter = '[%(asctime)s] %(name)s {%(filename)s:%(lineno)d} %(levelname)s'
+formatter += ' - %(message)s'
 logging.basicConfig(level=logging.DEBUG, format=formatter)
 asyncio.run(main())
