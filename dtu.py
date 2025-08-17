@@ -4,10 +4,10 @@ import json
 import re
 import crc
 from config import host, port, username, password
-import pack
+from modbus_data_handler import ModbusDataHandler
+from time import time
 import logging
 
-from collections import defaultdict
 '''
 {
   "method": "modbus_req",
@@ -32,6 +32,14 @@ from collections import defaultdict
   "data": 1,
   "pack_func": "uint16_AB",
   "crc": true
+  "parsers": [
+    {
+      "name": "relay_state",
+      "unpack_func": "uint16_AB",
+      "scale": 1,
+      "offset": 0
+    }
+  ]
 }
 '''
 
@@ -39,10 +47,6 @@ logger = logging.getLogger('dtu')
 
 
 class InvalidRequest(Exception):
-    pass
-
-
-class IgnoreRequest(Exception):
     pass
 
 
@@ -64,9 +68,6 @@ async def forward_request(mqtt, ident, data):
         logger.error('Error: invalid request' + str(data))
         raise InvalidRequest()
 
-    if data.get('method') != 'modbus_req':
-        raise IgnoreRequest()
-
     modbus = data.get('modbus', '')
     if not modbus:
         for k in ['addr', 'op', 'reg']:
@@ -84,10 +85,11 @@ async def forward_request(mqtt, ident, data):
             modbus += pl
         elif isinstance(pl, int):
             format = data.get('pack_func', 'uint16_AB')
-            v = pack.pack_value(pl, format)
-
-            if not v:
+            pack = getattr(ModbusDataHandler, 'pack_' + format)
+            if not pack:
                 return print_error()
+
+            v = pack(pl)
 
             modbus += v.hex()
 
@@ -106,9 +108,59 @@ async def send_response_error(mqtt, ident, req_id):
     await mqtt.publish(ident + '/response/' + req_id, payload=json.dumps(data))
 
 
-async def forward_response(mqtt, ident, req_id, payload):
-    data = {'modbus': payload.hex()}
+async def send_response_waiting(mqtt, ident, req_id):
+    data = {'modbus_state': 'waiting'}
     await mqtt.publish(ident + '/response/' + req_id, payload=json.dumps(data))
+
+
+class Request(object):
+
+    def __init__(self, id, parsers=[]):
+        self.id = id
+        self.parsers = parsers
+        self.expired_at = int(time()) + 10
+
+    def parse(self, payload):
+        verified = crc.verify_modbus_crc(payload)
+        payload_hex = payload.hex()
+        data = {'modbus': payload_hex, 'verified': verified}
+
+        if verified:
+            mdata = payload[3:-2]
+            for parser in self.parsers:
+                if not mdata:
+                    break
+
+                unpack_func = parser['unpack_func']
+                curr = b''
+                if unpack_func.find('16') > -1:
+                    curr = mdata[:2]
+                    mdata = mdata[2:]
+
+                if unpack_func.find('32') > -1:
+                    curr = mdata[:4]
+                    mdata = mdata[4:]
+
+                if not curr:
+                    continue
+
+                unpack = getattr(ModbusDataHandler, 'unpack_' + unpack_func)
+                if not unpack:
+                    continue
+
+                value = unpack(curr)
+
+                scale = parser.get('scale', 1)
+                offset = parser.get('offset', 0)
+
+                data[parser['name']] = value * scale + offset
+
+        return data
+
+
+async def forward_response(mqtt, ident, req, payload):
+    data = req.parse(payload)
+    await mqtt.publish(ident + '/response/' + req.id, payload=json.dumps(data))
 
 
 def normal_key(key):
@@ -140,15 +192,20 @@ async def forward_dtu(mqtt, ident, data):
 
 
 async def main():
-    async with aiomqtt.Client(host, port, username=username,
-                              password=password) as mqtt:
+    async with aiomqtt.Client(
+            host,
+            port,
+            username=username,
+            password=password,
+    ) as mqtt:
         await mqtt.subscribe('/+/+/dtu/#')
         await mqtt.subscribe('/+/+/request/#')
         # await mqtt.subscribe('/+/+/pong/#')
         # await send_ping(mqtt)
-        req_map = defaultdict(list)
+        req_map = {}
         async for message in mqtt.messages:
             topic = str(message.topic)
+            logger.debug('Raw: ' + topic)
             idx = topic.find('/', 1)
             idx = topic.find('/', idx + 1)
             ident = topic[:idx]
@@ -161,13 +218,25 @@ async def main():
 
             if topic.find('request') > -1:
                 req_id = topic.split('/')[-1]
+                data = safe_json(payload)
+                method = data.get('method')
+                if method != 'modbus_req':
+                    continue
+
+                prev_req = req_map.get(ident)
+                now = int(time())
+                if prev_req and prev_req.expired_at > now:
+                    send_response_waiting(mqtt, ident, req_id)
+                    continue
+
+                req = Request(req_id, data.get('parsers', []))
+
                 try:
-                    await forward_request(mqtt, ident, safe_json(payload))
-                    req_map[ident].append(req_id)
+                    await forward_request(mqtt, ident, data)
+                    req_map[ident] = req
                 except InvalidRequest:
                     send_response_error(mqtt, ident, req_id)
-                except IgnoreRequest:
-                    pass
+
                 continue
 
             if topic.find('pong') > -1:
@@ -177,11 +246,12 @@ async def main():
                 if payload.startswith(b'{') and payload.endswith(b'}'):
                     await forward_dtu(mqtt, ident, safe_json(payload))
                 else:
-                    req_ids = req_map.pop(ident, [])
-                    for req_id in req_ids:
-                        await forward_response(mqtt, ident, req_id, payload)
+                    req = req_map.pop(ident, None)
+                    if req:
+                        await forward_response(mqtt, ident, req, payload)
 
                 continue
+
 
 formatter = '[%(asctime)s] %(name)s {%(filename)s:%(lineno)d} %(levelname)s'
 formatter += ' - %(message)s'
