@@ -76,12 +76,16 @@ class RedisReqMap(ReqMap):
 async def process_dtu_bridge_message(job):
     message = json.loads(str(job.workload, 'utf-8'))
     topic = message['topic']
-    payload = base64.b64decode(message['payload'])
 
-    print(topic)
-    print(payload)
+    async def do_lock():
+        payload = base64.b64decode(message['payload'])
+        await process_mqtt_message(mqtt, req_map, topic, payload)
 
-    await process_mqtt_message(mqtt, req_map, topic, payload)
+    if topic.find('/request/') > -1:
+        uuid = topic.split('/')[2]
+        await job.with_lock('process-lock-' + uuid, 1, do_lock)
+    else:
+        await do_lock()
 
 
 async def main():
