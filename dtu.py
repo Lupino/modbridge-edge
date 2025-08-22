@@ -7,7 +7,6 @@ from config import host, port, username, password
 from modbus_data_handler import ModbusDataHandler
 from time import time
 import logging
-
 '''
 {
   "method": "modbus_req",
@@ -158,6 +157,33 @@ class Request(object):
         return data
 
 
+class ReqMap(object):
+
+    async def get(self, ident):
+        raise Exception("Not implement")
+
+    async def set(self, ident, req):
+        raise Exception("Not implement")
+
+    async def pop(self, ident):
+        raise Exception("Not implement")
+
+
+class DictReqMap(ReqMap):
+
+    def __init__(self):
+        self.data = {}
+
+    async def get(self, ident):
+        return self.data.get(ident)
+
+    async def set(self, ident, req):
+        self.data[ident] = req
+
+    async def pop(self, ident):
+        return self.data.pop(ident, None)
+
+
 async def forward_response(mqtt, ident, req, payload):
     data = req.parse(payload)
     await mqtt.publish(ident + '/response/' + req.id, payload=json.dumps(data))
@@ -191,6 +217,50 @@ async def forward_dtu(mqtt, ident, data):
     await mqtt.publish(ident + '/telemetry', payload=json.dumps(out))
 
 
+async def process_mqtt_message(mqtt, req_map, topic, payload):
+    idx = topic.find('/', 1)
+    idx = topic.find('/', idx + 1)
+    ident = topic[:idx]
+    logger.debug('Device: ' + ident)
+    topic = topic[idx:]
+    logger.debug(f'{topic}:{payload}')
+
+    if topic.find('request') > -1:
+        req_id = topic.split('/')[-1]
+        data = safe_json(payload)
+        method = data.get('method')
+        if method != 'modbus_req':
+            return
+
+        prev_req = await req_map.get(ident)
+        now = int(time())
+        if prev_req and prev_req.expired_at > now:
+            send_response_waiting(mqtt, ident, req_id)
+            return
+
+        req = Request(req_id, data.get('parsers', []))
+
+        try:
+            await forward_request(mqtt, ident, data)
+            await req_map.set(ident, req)
+        except InvalidRequest:
+            send_response_error(mqtt, ident, req_id)
+
+        return
+
+    if topic.find('pong') > -1:
+        return
+
+    if topic.find('dtu/pub') > -1:
+        if payload.startswith(b'{') and payload.endswith(b'}'):
+            await forward_dtu(mqtt, ident, safe_json(payload))
+        else:
+            req = await req_map.pop(ident)
+            if req:
+                await forward_response(mqtt, ident, req, payload)
+        return
+
+
 async def main():
     async with aiomqtt.Client(
             host,
@@ -202,58 +272,20 @@ async def main():
         await mqtt.subscribe('/+/+/request/#')
         # await mqtt.subscribe('/+/+/pong/#')
         # await send_ping(mqtt)
-        req_map = {}
+        req_map = DictReqMap()
         async for message in mqtt.messages:
             topic = str(message.topic)
             logger.debug('Raw: ' + topic)
-            idx = topic.find('/', 1)
-            idx = topic.find('/', idx + 1)
-            ident = topic[:idx]
-            logger.debug('Device: ' + ident)
-            topic = topic[idx:]
 
             payload = message.payload.strip()
 
             logger.debug(f'{topic}:{payload}')
 
-            if topic.find('request') > -1:
-                req_id = topic.split('/')[-1]
-                data = safe_json(payload)
-                method = data.get('method')
-                if method != 'modbus_req':
-                    continue
-
-                prev_req = req_map.get(ident)
-                now = int(time())
-                if prev_req and prev_req.expired_at > now:
-                    send_response_waiting(mqtt, ident, req_id)
-                    continue
-
-                req = Request(req_id, data.get('parsers', []))
-
-                try:
-                    await forward_request(mqtt, ident, data)
-                    req_map[ident] = req
-                except InvalidRequest:
-                    send_response_error(mqtt, ident, req_id)
-
-                continue
-
-            if topic.find('pong') > -1:
-                continue
-
-            if topic.find('dtu/pub') > -1:
-                if payload.startswith(b'{') and payload.endswith(b'}'):
-                    await forward_dtu(mqtt, ident, safe_json(payload))
-                else:
-                    req = req_map.pop(ident, None)
-                    if req:
-                        await forward_response(mqtt, ident, req, payload)
-
-                continue
+            await process_mqtt_message(mqtt, req_map, topic, payload)
 
 
-formatter = '[%(asctime)s] %(name)s {%(filename)s:%(lineno)d} %(levelname)s'
-formatter += ' - %(message)s'
-logging.basicConfig(level=logging.DEBUG, format=formatter)
-asyncio.run(main())
+if __name__ == '__main__':
+    formatter = '[%(asctime)s] %(name)s {%(filename)s:%(lineno)d} '
+    formatter += '%(levelname)s - %(message)s'
+    logging.basicConfig(level=logging.DEBUG, format=formatter)
+    asyncio.run(main())

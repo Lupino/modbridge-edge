@@ -1,1 +1,3 @@
 aiomqtt
+redis
+aio_periodic @ git+https://github.com/Lupino/python-aio-periodic.git@dd22b0d68f201c39319d2337c2abd88c7011d5d6
