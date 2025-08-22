@@ -4,9 +4,9 @@
 cp config.sample.py config.py
 # modify config.py use the right mqtt auth
 
-docker build -t lupino/esp32-dtu:1.0.0
+docker build -t lupino/esp32-dtu-bridge:1.0.0
 
-docker run -i -t lupino/esp32-dtu:1.0.0
+docker run -i -t lupino/esp32-dtu-bridge:1.0.0
 ```
 
 ##  modbus request
