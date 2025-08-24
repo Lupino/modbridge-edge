@@ -1,4 +1,5 @@
 import struct
+from typing import cast
 
 
 class ModbusDataHandler:
@@ -16,61 +17,61 @@ class ModbusDataHandler:
     """
 
     @staticmethod
-    def pack_uint16_AB(value):
+    def pack_uint16_AB(value: int) -> bytes:
         """Pack unsigned 16-bit integer, big-endian"""
         return struct.pack('>H', value)
 
     @staticmethod
-    def unpack_uint16_AB(data):
+    def unpack_uint16_AB(data: bytes) -> int:
         """Unpack unsigned 16-bit integer, big-endian"""
-        return struct.unpack('>H', data)[0]
+        return cast(int, struct.unpack('>H', data)[0])
 
     @staticmethod
-    def pack_uint16_BA(value):
+    def pack_uint16_BA(value: int) -> bytes:
         """Pack unsigned 16-bit integer, little-endian"""
         return struct.pack('<H', value)
 
     @staticmethod
-    def unpack_uint16_BA(data):
+    def unpack_uint16_BA(data: bytes) -> int:
         """Unpack unsigned 16-bit integer, little-endian"""
-        return struct.unpack('<H', data)[0]
+        return cast(int, struct.unpack('<H', data)[0])
 
     @staticmethod
-    def pack_uint32_ABCD(value):
+    def pack_uint32_ABCD(value: int) -> bytes:
         """Pack unsigned 32-bit integer, big-endian"""
         return struct.pack('>I', value)
 
     @staticmethod
-    def unpack_uint32_ABCD(data):
+    def unpack_uint32_ABCD(data: bytes) -> int:
         """Unpack unsigned 32-bit integer, big-endian"""
-        return struct.unpack('>I', data)[0]
+        return cast(int, struct.unpack('>I', data)[0])
 
     @staticmethod
-    def pack_uint32_DCBA(value):
+    def pack_uint32_DCBA(value: int) -> bytes:
         """Pack unsigned 32-bit integer, little-endian"""
         return struct.pack('<I', value)
 
     @staticmethod
-    def unpack_uint32_DCBA(data):
+    def unpack_uint32_DCBA(data: bytes) -> int:
         """Unpack unsigned 32-bit integer, little-endian"""
-        return struct.unpack('<I', data)[0]
+        return cast(int, struct.unpack('<I', data)[0])
 
     @staticmethod
-    def pack_uint32_CDAB(value):
+    def pack_uint32_CDAB(value: int) -> bytes:
         """Pack unsigned 32-bit integer, middle-endian (swap 16-bit words)"""
         # Convert to big-endian first, then swap the 16-bit words
         big_endian = struct.pack('>I', value)
         return big_endian[2:4] + big_endian[0:2]
 
     @staticmethod
-    def unpack_uint32_CDAB(data):
+    def unpack_uint32_CDAB(data: bytes) -> int:
         """Unpack unsigned 32-bit integer, middle-endian (swap 16-bit words)"""
         # Swap the 16-bit words, then unpack as big-endian
         swapped = data[2:4] + data[0:2]
-        return struct.unpack('>I', swapped)[0]
+        return cast(int, struct.unpack('>I', swapped)[0])
 
     @staticmethod
-    def pack_uint32_BADC(value):
+    def pack_uint32_BADC(value: int) -> bytes:
         """Pack unsigned 32-bit integer,
         middle-endian (swap bytes within words)"""
         # Convert to big-endian, then swap bytes within each 16-bit word
@@ -79,67 +80,67 @@ class ModbusDataHandler:
             3:4] + big_endian[2:3]
 
     @staticmethod
-    def unpack_uint32_BADC(data):
+    def unpack_uint32_BADC(data: bytes) -> int:
         """Unpack unsigned 32-bit integer,
         middle-endian (swap bytes within words)"""
         # Swap bytes within each 16-bit word, then unpack as big-endian
         swapped = data[1:2] + data[0:1] + data[3:4] + data[2:3]
-        return struct.unpack('>I', swapped)[0]
+        return cast(int, struct.unpack('>I', swapped)[0])
 
     @staticmethod
-    def pack_int16_AB(value):
+    def pack_int16_AB(value: int) -> bytes:
         """Pack signed 16-bit integer, big-endian"""
         return struct.pack('>h', value)
 
     @staticmethod
-    def unpack_int16_AB(data):
+    def unpack_int16_AB(data: bytes) -> int:
         """Unpack signed 16-bit integer, big-endian"""
-        return struct.unpack('>h', data)[0]
+        return cast(int, struct.unpack('>h', data)[0])
 
     @staticmethod
-    def pack_int16_BA(value):
+    def pack_int16_BA(value: int) -> bytes:
         """Pack signed 16-bit integer, little-endian"""
         return struct.pack('<h', value)
 
     @staticmethod
-    def unpack_int16_BA(data):
+    def unpack_int16_BA(data: bytes) -> int:
         """Unpack signed 16-bit integer, little-endian"""
-        return struct.unpack('<h', data)[0]
+        return cast(int, struct.unpack('<h', data)[0])
 
     @staticmethod
-    def pack_int32_ABCD(value):
+    def pack_int32_ABCD(value: int) -> bytes:
         """Pack signed 32-bit integer, big-endian"""
         return struct.pack('>i', value)
 
     @staticmethod
-    def unpack_int32_ABCD(data):
+    def unpack_int32_ABCD(data: bytes) -> int:
         """Unpack signed 32-bit integer, big-endian"""
-        return struct.unpack('>i', data)[0]
+        return cast(int, struct.unpack('>i', data)[0])
 
     @staticmethod
-    def pack_int32_DCBA(value):
+    def pack_int32_DCBA(value: int) -> bytes:
         """Pack signed 32-bit integer, little-endian"""
         return struct.pack('<i', value)
 
     @staticmethod
-    def unpack_int32_DCBA(data):
+    def unpack_int32_DCBA(data: bytes) -> int:
         """Unpack signed 32-bit integer, little-endian"""
-        return struct.unpack('<i', data)[0]
+        return cast(int, struct.unpack('<i', data)[0])
 
     @staticmethod
-    def pack_int32_CDAB(value):
+    def pack_int32_CDAB(value: int) -> bytes:
         """Pack signed 32-bit integer, middle-endian (swap 16-bit words)"""
         big_endian = struct.pack('>i', value)
         return big_endian[2:4] + big_endian[0:2]
 
     @staticmethod
-    def unpack_int32_CDAB(data):
+    def unpack_int32_CDAB(data: bytes) -> int:
         """Unpack signed 32-bit integer, middle-endian (swap 16-bit words)"""
         swapped = data[2:4] + data[0:2]
-        return struct.unpack('>i', swapped)[0]
+        return cast(int, struct.unpack('>i', swapped)[0])
 
     @staticmethod
-    def pack_int32_BADC(value):
+    def pack_int32_BADC(value: int) -> bytes:
         """Pack signed 32-bit integer,
         middle-endian (swap bytes within words)"""
         big_endian = struct.pack('>i', value)
@@ -147,59 +148,59 @@ class ModbusDataHandler:
             3:4] + big_endian[2:3]
 
     @staticmethod
-    def unpack_int32_BADC(data):
+    def unpack_int32_BADC(data: bytes) -> int:
         """Unpack signed 32-bit integer,
         middle-endian (swap bytes within words)"""
         swapped = data[1:2] + data[0:1] + data[3:4] + data[2:3]
-        return struct.unpack('>i', swapped)[0]
+        return cast(int, struct.unpack('>i', swapped)[0])
 
     @staticmethod
-    def pack_float32_ABCD(value):
+    def pack_float32_ABCD(value: float) -> bytes:
         """Pack 32-bit float, big-endian"""
         return struct.pack('>f', value)
 
     @staticmethod
-    def unpack_float32_ABCD(data):
+    def unpack_float32_ABCD(data: bytes) -> float:
         """Unpack 32-bit float, big-endian"""
-        return struct.unpack('>f', data)[0]
+        return cast(float, struct.unpack('>f', data)[0])
 
     @staticmethod
-    def pack_float32_DCBA(value):
+    def pack_float32_DCBA(value: float) -> bytes:
         """Pack 32-bit float, little-endian"""
         return struct.pack('<f', value)
 
     @staticmethod
-    def unpack_float32_DCBA(data):
+    def unpack_float32_DCBA(data: bytes) -> float:
         """Unpack 32-bit float, little-endian"""
-        return struct.unpack('<f', data)[0]
+        return cast(float, struct.unpack('<f', data)[0])
 
     @staticmethod
-    def pack_float32_CDAB(value):
+    def pack_float32_CDAB(value: float) -> bytes:
         """Pack 32-bit float, middle-endian (swap 16-bit words)"""
         big_endian = struct.pack('>f', value)
         return big_endian[2:4] + big_endian[0:2]
 
     @staticmethod
-    def unpack_float32_CDAB(data):
+    def unpack_float32_CDAB(data: bytes) -> float:
         """Unpack 32-bit float, middle-endian (swap 16-bit words)"""
         swapped = data[2:4] + data[0:2]
-        return struct.unpack('>f', swapped)[0]
+        return cast(float, struct.unpack('>f', swapped)[0])
 
     @staticmethod
-    def pack_float32_BADC(value):
+    def pack_float32_BADC(value: float) -> bytes:
         """Pack 32-bit float, middle-endian (swap bytes within words)"""
         big_endian = struct.pack('>f', value)
         return big_endian[1:2] + big_endian[0:1] + big_endian[
             3:4] + big_endian[2:3]
 
     @staticmethod
-    def unpack_float32_BADC(data):
+    def unpack_float32_BADC(data: bytes) -> float:
         """Unpack 32-bit float, middle-endian (swap bytes within words)"""
         swapped = data[1:2] + data[0:1] + data[3:4] + data[2:3]
-        return struct.unpack('>f', swapped)[0]
+        return cast(float, struct.unpack('>f', swapped)[0])
 
     @staticmethod
-    def pack_bcd16(value):
+    def pack_bcd16(value: int) -> bytes:
         """Pack 16-bit BCD (Binary Coded Decimal)"""
         if not 0 <= value <= 9999:
             raise ValueError("BCD16 value must be between 0 and 9999")
@@ -218,9 +219,12 @@ class ModbusDataHandler:
         return struct.pack('BB', high_byte, low_byte)
 
     @staticmethod
-    def unpack_bcd16(data):
+    def unpack_bcd16(data: bytes) -> int:
         """Unpack 16-bit BCD (Binary Coded Decimal)"""
-        high_byte, low_byte = struct.unpack('BB', data)
+        hb, lb = struct.unpack('BB', data)
+
+        high_byte = int(hb)
+        low_byte = int(lb)
 
         # Extract BCD digits
         digit1 = (high_byte >> 4) & 0x0F
@@ -235,7 +239,7 @@ class ModbusDataHandler:
         return digit1 * 1000 + digit2 * 100 + digit3 * 10 + digit4
 
     @staticmethod
-    def pack_bcd32(value):
+    def pack_bcd32(value: int) -> bytes:
         """Pack 32-bit BCD (Binary Coded Decimal)"""
         if not 0 <= value <= 99999999:
             raise ValueError("BCD32 value must be between 0 and 99999999")
@@ -257,9 +261,14 @@ class ModbusDataHandler:
         return struct.pack('BBBB', *bytes_data)
 
     @staticmethod
-    def unpack_bcd32(data):
+    def unpack_bcd32(data: bytes) -> int:
         """Unpack 32-bit BCD (Binary Coded Decimal)"""
-        byte1, byte2, byte3, byte4 = struct.unpack('BBBB', data)
+        b1, b2, b3, b4 = struct.unpack('BBBB', data)
+
+        byte1 = int(b1)
+        byte2 = int(b2)
+        byte3 = int(b3)
+        byte4 = int(b4)
 
         # Extract BCD digits from each byte
         digits = []
@@ -282,7 +291,7 @@ class ModbusDataHandler:
 
 
 # Example usage and test functions
-def test_all_formats():
+def test_all_formats() -> None:
     """Test all data format conversions"""
     handler = ModbusDataHandler()
 

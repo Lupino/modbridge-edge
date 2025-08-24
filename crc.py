@@ -1,7 +1,8 @@
 import struct
+from typing import Union, Tuple
 
 
-def modbus_crc16_table(data):
+def modbus_crc16_table(data: Union[bytes, bytearray]) -> int:
     """
     Calculate Modbus CRC-16 using lookup table method (fastest)
 
@@ -52,7 +53,7 @@ def modbus_crc16_table(data):
     return crc
 
 
-def modbus_crc16_simple(data):
+def modbus_crc16_simple(data: Union[bytes, bytearray]) -> int:
     """
     Calculate Modbus CRC-16 using simple polynomial method
 
@@ -76,7 +77,7 @@ def modbus_crc16_simple(data):
     return crc
 
 
-def add_modbus_crc(data):
+def add_modbus_crc(data: Union[str, bytes, bytearray]) -> bytes:
     """
     Add Modbus CRC to data packet (appends CRC bytes in little-endian format)
 
@@ -96,7 +97,7 @@ def add_modbus_crc(data):
     return data + crc_bytes
 
 
-def verify_modbus_crc(data_with_crc):
+def verify_modbus_crc(data_with_crc: Union[bytes, bytearray]) -> bool:
     """
     Verify Modbus CRC of a complete packet
 
@@ -111,15 +112,15 @@ def verify_modbus_crc(data_with_crc):
 
     # Split data and CRC
     data = data_with_crc[:-2]
-    received_crc = struct.unpack('<H', data_with_crc[-2:])[0]
+    received_crc: int = struct.unpack('<H', data_with_crc[-2:])[0]
 
     # Calculate CRC of data
-    calculated_crc = modbus_crc16_table(data)
+    calculated_crc: int = modbus_crc16_table(data)
 
-    return received_crc == calculated_crc
+    return bool(received_crc == calculated_crc)
 
 
-def modbus_crc_hex_string(hex_string):
+def modbus_crc_hex_string(hex_string: str) -> Tuple[int, str, str]:
     """
     Calculate CRC for hex string input
 

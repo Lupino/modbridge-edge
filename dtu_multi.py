@@ -6,14 +6,14 @@ import base64
 from config import host, port, username, password, periodic_port, redis_host
 import json
 
-from typing import Any
+from typing import Any, Optional, cast
 
 from dtu import process_mqtt_message, ReqMap, Request
 import logging
 
 worker = Worker()
-req_map = None
-mqtt = None
+req_map: Optional[ReqMap] = None
+mqtt: Optional[aiomqtt.Client] = None
 
 
 def to_str(v: bytes | str) -> str:
@@ -35,17 +35,17 @@ def from_json(v: Any) -> str:
     return json.dumps(v)
 
 
-def gen_key(ident):
+def gen_key(ident: str) -> str:
     uuid = ident.split('/')[-1]
     return f'esp32-dtu-bridge:{uuid}'
 
 
 class RedisReqMap(ReqMap):
 
-    def __init__(self, redis):
+    def __init__(self, redis: aioredis.Redis) -> None:
         self.redis = redis
 
-    async def get(self, ident):
+    async def get(self, ident: str) -> Optional[Request]:
         key = gen_key(ident)
         data = to_json(await self.redis.get(key))
         if not data:
@@ -55,7 +55,7 @@ class RedisReqMap(ReqMap):
         req.expired_at = data['expired_at']
         return req
 
-    async def set(self, ident, req):
+    async def set(self, ident: str, req: Request) -> None:
         key = gen_key(ident)
         data = {
             'id': req.id,
@@ -65,7 +65,7 @@ class RedisReqMap(ReqMap):
 
         await self.redis.setex(key, 20, json.dumps(data))
 
-    async def pop(self, ident):
+    async def pop(self, ident: str) -> Optional[Request]:
         req = await self.get(ident)
         key = gen_key(ident)
         await self.redis.delete(key)
@@ -73,13 +73,16 @@ class RedisReqMap(ReqMap):
 
 
 @worker.func('process-dtu-bridge-message')
-async def process_dtu_bridge_message(job):
+async def process_dtu_bridge_message(job: Any) -> None:
     message = json.loads(str(job.workload, 'utf-8'))
     topic = message['topic']
 
-    async def do_lock():
+    async def do_lock() -> None:
         payload = base64.b64decode(message['payload'])
-        await process_mqtt_message(mqtt, req_map, topic, payload)
+        if mqtt is None or req_map is None:
+            raise RuntimeError('mqtt or req_map not initialized')
+        await process_mqtt_message(cast(aiomqtt.Client, mqtt),
+                                   cast(ReqMap, req_map), topic, payload)
 
     if topic.find('/request/') > -1:
         uuid = topic.split('/')[2]
@@ -88,13 +91,13 @@ async def process_dtu_bridge_message(job):
         await do_lock()
 
 
-async def main():
+async def main() -> None:
     global req_map, mqtt
     redis = aioredis.from_url(
         redis_host,
         encoding='utf-8',
         decode_responses=True,
-    )
+    )  # type: ignore[no-untyped-call]
     req_map = RedisReqMap(redis)
 
     async with aiomqtt.Client(

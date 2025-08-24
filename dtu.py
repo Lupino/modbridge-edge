@@ -7,40 +7,7 @@ from config import host, port, username, password
 from modbus_data_handler import ModbusDataHandler
 from time import time
 import logging
-'''
-{
-  "method": "modbus_req",
-  "modbus": "0106000f0001",
-  "crc": true
-}
-
-{
-  "method": "modbus_req",
-  "addr": "01",
-  "op": "06",
-  "reg": "000F",
-  "data": "0001",
-  "crc": true
-}
-
-{
-  "method": "modbus_req",
-  "addr": "01",
-  "op": "06",
-  "reg": "000F",
-  "data": 1,
-  "pack_func": "uint16_AB",
-  "crc": true
-  "parsers": [
-    {
-      "name": "relay_state",
-      "unpack_func": "uint16_AB",
-      "scale": 1,
-      "offset": 0
-    }
-  ]
-}
-'''
+from typing import Any, Dict, Optional, Callable, List
 
 logger = logging.getLogger('dtu')
 
@@ -49,21 +16,25 @@ class InvalidRequest(Exception):
     pass
 
 
-def safe_json(data):
+def safe_json(data: Any) -> Dict[str, Any]:
     try:
-        return json.loads(str(data, 'utf-8', errors='ignore'))
+        parsed = json.loads(str(data, 'utf-8', errors='ignore'))
+        if isinstance(parsed, dict):
+            return parsed
+        return {}
     except Exception as exc:
         logger.error(data)
         logger.exception(exc)
+        return {}
 
 
-async def send_ping(mqtt, ident):
+async def send_ping(mqtt: Any, ident: str) -> None:
     await mqtt.publish(ident + '/ping')
 
 
-async def forward_request(mqtt, ident, data):
+async def forward_request(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
 
-    def print_error():
+    def print_error() -> None:
         logger.error('Error: invalid request' + str(data))
         raise InvalidRequest()
 
@@ -83,8 +54,10 @@ async def forward_request(mqtt, ident, data):
         if isinstance(pl, str):
             modbus += pl
         elif isinstance(pl, int):
-            format = data.get('pack_func', 'uint16_AB')
-            pack = getattr(ModbusDataHandler, 'pack_' + format)
+            fmt = data.get('pack_func', 'uint16_AB')
+            pack: Optional[Callable[[int],
+                                    bytes]] = getattr(ModbusDataHandler,
+                                                      'pack_' + fmt, None)
             if not pack:
                 return print_error()
 
@@ -102,27 +75,29 @@ async def forward_request(mqtt, ident, data):
     await mqtt.publish(ident + '/dtu/sub', payload=modbus_bytes)
 
 
-async def send_response_error(mqtt, ident, req_id):
+async def send_response_error(mqtt: Any, ident: str, req_id: str) -> None:
     data = {'err': 'Invalid request'}
     await mqtt.publish(ident + '/response/' + req_id, payload=json.dumps(data))
 
 
-async def send_response_waiting(mqtt, ident, req_id):
+async def send_response_waiting(mqtt: Any, ident: str, req_id: str) -> None:
     data = {'modbus_state': 'waiting'}
     await mqtt.publish(ident + '/response/' + req_id, payload=json.dumps(data))
 
 
 class Request(object):
 
-    def __init__(self, id, parsers=[]):
-        self.id = id
-        self.parsers = parsers
-        self.expired_at = int(time()) + 10
+    def __init__(self,
+                 id: str,
+                 parsers: Optional[List[Dict[str, Any]]] = None) -> None:
+        self.id: str = id
+        self.parsers: List[Dict[str, Any]] = parsers or []
+        self.expired_at: int = int(time()) + 10
 
-    def parse(self, payload):
+    def parse(self, payload: bytes) -> Dict[str, Any]:
         verified = crc.verify_modbus_crc(payload)
         payload_hex = payload.hex()
-        data = {'modbus': payload_hex, 'verified': verified}
+        data: Dict[str, Any] = {'modbus': payload_hex, 'verified': verified}
 
         if verified:
             mdata = payload[3:-2]
@@ -132,18 +107,19 @@ class Request(object):
 
                 unpack_func = parser['unpack_func']
                 curr = b''
-                if unpack_func.find('16') > -1:
+                if '16' in unpack_func:
                     curr = mdata[:2]
                     mdata = mdata[2:]
 
-                if unpack_func.find('32') > -1:
+                if '32' in unpack_func:
                     curr = mdata[:4]
                     mdata = mdata[4:]
 
                 if not curr:
                     continue
 
-                unpack = getattr(ModbusDataHandler, 'unpack_' + unpack_func)
+                unpack = getattr(ModbusDataHandler, 'unpack_' + unpack_func,
+                                 None)
                 if not unpack:
                     continue
 
@@ -159,37 +135,38 @@ class Request(object):
 
 class ReqMap(object):
 
-    async def get(self, ident):
+    async def get(self, ident: str) -> Optional[Request]:
         raise Exception("Not implement")
 
-    async def set(self, ident, req):
+    async def set(self, ident: str, req: Request) -> None:
         raise Exception("Not implement")
 
-    async def pop(self, ident):
+    async def pop(self, ident: str) -> Optional[Request]:
         raise Exception("Not implement")
 
 
 class DictReqMap(ReqMap):
 
-    def __init__(self):
-        self.data = {}
+    def __init__(self) -> None:
+        self.data: Dict[str, Request] = {}
 
-    async def get(self, ident):
+    async def get(self, ident: str) -> Optional[Request]:
         return self.data.get(ident)
 
-    async def set(self, ident, req):
+    async def set(self, ident: str, req: Request) -> None:
         self.data[ident] = req
 
-    async def pop(self, ident):
+    async def pop(self, ident: str) -> Optional[Request]:
         return self.data.pop(ident, None)
 
 
-async def forward_response(mqtt, ident, req, payload):
+async def forward_response(mqtt: Any, ident: str, req: Request,
+                           payload: bytes) -> None:
     data = req.parse(payload)
     await mqtt.publish(ident + '/response/' + req.id, payload=json.dumps(data))
 
 
-def normal_key(key):
+def normal_key(key: str) -> str:
     re_chr = re.compile('[a-zA-Z0-9_]')
     re_space = re.compile('[ ]+')
 
@@ -204,26 +181,31 @@ def normal_key(key):
     return re_space.sub('_', out)
 
 
-async def forward_dtu(mqtt, ident, data):
+async def forward_dtu(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
     params = data.get('params')
 
     if not params:
         await send_ping(mqtt, ident)
         return
 
-    out = {}
+    out: Dict[str, Any] = {}
     for k, v in params.items():
         out[normal_key(k)] = v
     await mqtt.publish(ident + '/telemetry', payload=json.dumps(out))
 
 
-async def process_mqtt_message(mqtt, req_map, topic, payload):
+async def process_mqtt_message(mqtt: Any, req_map: ReqMap, topic: str,
+                               payload: Any) -> None:
     idx = topic.find('/', 1)
     idx = topic.find('/', idx + 1)
     ident = topic[:idx]
     logger.debug('Device: ' + ident)
     topic = topic[idx:]
-    logger.debug(f'{topic}:{payload}')
+
+    if isinstance(payload, (bytes, bytearray)):
+        payload = payload.strip()
+    else:
+        payload = str(payload).strip()
 
     if topic.find('request') > -1:
         req_id = topic.split('/')[-1]
@@ -235,7 +217,7 @@ async def process_mqtt_message(mqtt, req_map, topic, payload):
         prev_req = await req_map.get(ident)
         now = int(time())
         if prev_req and prev_req.expired_at > now:
-            send_response_waiting(mqtt, ident, req_id)
+            await send_response_waiting(mqtt, ident, req_id)
             return
 
         req = Request(req_id, data.get('parsers', []))
@@ -244,7 +226,7 @@ async def process_mqtt_message(mqtt, req_map, topic, payload):
             await forward_request(mqtt, ident, data)
             await req_map.set(ident, req)
         except InvalidRequest:
-            send_response_error(mqtt, ident, req_id)
+            await send_response_error(mqtt, ident, req_id)
 
         return
 
@@ -252,16 +234,22 @@ async def process_mqtt_message(mqtt, req_map, topic, payload):
         return
 
     if topic.find('dtu/pub') > -1:
-        if payload.startswith(b'{') and payload.endswith(b'}'):
+        if isinstance(payload, (bytes, bytearray)) and payload.startswith(
+                b'{') and payload.endswith(b'}'):
             await forward_dtu(mqtt, ident, safe_json(payload))
         else:
-            req = await req_map.pop(ident)
-            if req:
-                await forward_response(mqtt, ident, req, payload)
+            popped = await req_map.pop(ident)
+            if popped is not None:
+                req = popped
+                if isinstance(payload, (bytes, bytearray)):
+                    raw_payload = payload
+                else:
+                    raw_payload = str(payload).encode('utf-8')
+                await forward_response(mqtt, ident, req, raw_payload)
         return
 
 
-async def main():
+async def main() -> None:
     async with aiomqtt.Client(
             host,
             port,
@@ -270,16 +258,18 @@ async def main():
     ) as mqtt:
         await mqtt.subscribe('/+/+/dtu/#')
         await mqtt.subscribe('/+/+/request/#')
-        # await mqtt.subscribe('/+/+/pong/#')
-        # await send_ping(mqtt)
         req_map = DictReqMap()
         async for message in mqtt.messages:
             topic = str(message.topic)
             logger.debug('Raw: ' + topic)
 
-            payload = message.payload.strip()
+            payload = message.payload
+            if isinstance(payload, (bytes, bytearray)):
+                payload_str = payload.decode('utf-8', errors='replace')
+            else:
+                payload_str = str(payload)
 
-            logger.debug(f'{topic}:{payload}')
+            logger.debug(f'{topic}:{payload_str}')
 
             await process_mqtt_message(mqtt, req_map, topic, payload)
 
