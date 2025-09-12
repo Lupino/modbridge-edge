@@ -261,16 +261,7 @@ async def main() -> None:
         req_map = DictReqMap()
         async for message in mqtt.messages:
             topic = str(message.topic)
-            logger.debug('Raw: ' + topic)
-
             payload = message.payload
-            if isinstance(payload, (bytes, bytearray)):
-                payload_str = payload.decode('utf-8', errors='replace')
-            else:
-                payload_str = str(payload)
-
-            logger.debug(f'{topic}:{payload_str}')
-
             await process_mqtt_message(mqtt, req_map, topic, payload)
 
 
