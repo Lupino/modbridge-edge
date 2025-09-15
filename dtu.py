@@ -7,7 +7,7 @@ from config import host, port, username, password
 from modbus_data_handler import ModbusDataHandler
 from time import time
 import logging
-from typing import Any, Dict, Optional, Callable, List
+from typing import Any, Dict, Optional, List
 
 logger = logging.getLogger('dtu')
 
@@ -54,10 +54,8 @@ async def forward_request(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
         if isinstance(pl, str):
             modbus += pl
         elif isinstance(pl, int):
-            fmt = data.get('pack_func', 'uint16_AB')
-            pack: Optional[Callable[[int],
-                                    bytes]] = getattr(ModbusDataHandler,
-                                                      'pack_' + fmt, None)
+            pack_func = data.get('pack_func', 'uint16_AB')
+            pack = getattr(ModbusDataHandler, 'pack_' + pack_func, None)
             if not pack:
                 return print_error()
 
@@ -81,15 +79,17 @@ async def send_response_error(mqtt: Any, ident: str, req_id: str) -> None:
 
 
 async def send_response_waiting(mqtt: Any, ident: str, req_id: str) -> None:
-    data = {'modbus_state': 'waiting'}
+    data = {'modbus_state': 'waiting', 'err': 'MODBUS_STATE_WAITING'}
     await mqtt.publish(ident + '/response/' + req_id, payload=json.dumps(data))
 
 
 class Request(object):
 
-    def __init__(self,
-                 id: str,
-                 parsers: Optional[List[Dict[str, Any]]] = None) -> None:
+    def __init__(
+        self,
+        id: str,
+        parsers: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
         self.id: str = id
         self.parsers: List[Dict[str, Any]] = parsers or []
         self.expired_at: int = int(time()) + 10
@@ -107,6 +107,11 @@ class Request(object):
 
                 unpack_func = parser['unpack_func']
                 curr = b''
+
+                if '8' in unpack_func:
+                    curr = mdata[:1]
+                    mdata = mdata[1:]
+
                 if '16' in unpack_func:
                     curr = mdata[:2]
                     mdata = mdata[2:]
@@ -118,12 +123,23 @@ class Request(object):
                 if not curr:
                     continue
 
-                unpack = getattr(ModbusDataHandler, 'unpack_' + unpack_func,
-                                 None)
+                name = 'unpack_' + unpack_func
+                unpack = getattr(ModbusDataHandler, name, None)
                 if not unpack:
                     continue
 
                 value = unpack(curr)
+
+                if unpack_func in ['bin8', 'bin16']:
+                    if not isinstance(value, str):
+                        continue
+
+                    value_len = len(value)
+                    bin_parsers = parser['parsers']
+                    for bin_parser in bin_parsers:
+                        idx = (-bin_parser['index'] - 1) % value_len
+                        data[bin_parser['name']] = value[idx] == '1'
+                    continue
 
                 scale = parser.get('scale', 1)
                 offset = parser.get('offset', 0)

@@ -60,3 +60,27 @@ docker run -i -t lupino/esp32-dtu-bridge:1.0.0
   ]
 }
 ```
+
+```json
+{
+  "method": "modbus_req",
+  "addr": "01",
+  "op": "06",
+  "reg": "000F",
+  "data": 1,
+  "pack_func": "uint16_AB",
+  "crc": true
+  "parsers": [
+    {
+      "name": "relay_state",
+      "unpack_func": "bin8",
+      "bin_parsers": [
+        {"index": 0, "name": 'name1'},
+        {"index": 2, "name": 'name1'}
+      ],
+      "scale": 1,
+      "offset": 0
+    }
+  ]
+}
+```

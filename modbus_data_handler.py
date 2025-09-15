@@ -17,6 +17,28 @@ class ModbusDataHandler:
     """
 
     @staticmethod
+    def pack_uint8(value: int) -> bytes:
+        """Pack unsigned 8-bit integer"""
+        return struct.pack('B', value)
+
+    @staticmethod
+    def unpack_uint8(value: bytes) -> int:
+        """Unpack unsigned 8-bit integer"""
+        return cast(int, struct.unpack('B', value)[0])
+
+    @staticmethod
+    def unpack_bin8(value: bytes) -> str:
+        """Unpack unsigned 8-bit integer to bin"""
+        bin8 = bin(struct.unpack('B', value)[0])[2:]
+        return '0' * (8 - len(bin8)) + bin8
+
+    @staticmethod
+    def unpack_bin16(value: bytes) -> str:
+        """Unpack unsigned 16-bit integer to bin"""
+        bin16 = bin(struct.unpack('>H', value)[0])[2:]
+        return '0' * (16 - len(bin16)) + bin16
+
+    @staticmethod
     def pack_uint16_AB(value: int) -> bytes:
         """Pack unsigned 16-bit integer, big-endian"""
         return struct.pack('>H', value)
@@ -86,6 +108,16 @@ class ModbusDataHandler:
         # Swap bytes within each 16-bit word, then unpack as big-endian
         swapped = data[1:2] + data[0:1] + data[3:4] + data[2:3]
         return cast(int, struct.unpack('>I', swapped)[0])
+
+    @staticmethod
+    def pack_int8(value: int) -> bytes:
+        """Pack 8-bit integer"""
+        return struct.pack('b', value)
+
+    @staticmethod
+    def unpack_int8(value: bytes) -> int:
+        """Unpack 8-bit integer"""
+        return cast(int, struct.unpack('b', value)[0])
 
     @staticmethod
     def pack_int16_AB(value: int) -> bytes:
