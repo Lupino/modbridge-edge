@@ -77,18 +77,11 @@ async def process_dtu_bridge_message(job: Any) -> None:
     message = json.loads(str(job.workload, 'utf-8'))
     topic = message['topic']
 
-    async def do_lock() -> None:
-        payload = base64.b64decode(message['payload'])
-        if mqtt is None or req_map is None:
-            raise RuntimeError('mqtt or req_map not initialized')
-        await process_mqtt_message(cast(aiomqtt.Client, mqtt),
-                                   cast(ReqMap, req_map), topic, payload)
+    payload = base64.b64decode(message['payload'])
+    if mqtt is None or req_map is None:
+        raise RuntimeError('mqtt or req_map not initialized')
 
-    if topic.find('/request/') > -1:
-        uuid = topic.split('/')[2]
-        await job.with_lock('process-lock-' + uuid, 1, do_lock)
-    else:
-        await do_lock()
+    await process_mqtt_message(mqtt, req_map, topic, payload)
 
 
 async def main() -> None:
