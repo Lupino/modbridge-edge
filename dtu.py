@@ -198,6 +198,16 @@ def normal_key(key: str) -> str:
 
 
 async def forward_dtu(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
+    state = data.pop('state', None)
+
+    if state:
+        await mqtt.publish(
+            ident + '/attributes',
+            payload=json.dumps({'state': state}),
+            retain=True,
+            qos=1,
+        )
+
     params = data.get('params')
 
     if not params:
