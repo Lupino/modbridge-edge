@@ -8,6 +8,7 @@ from modbus_data_handler import ModbusDataHandler
 from time import time
 import logging
 from typing import Any, Dict, Optional, List
+from decimal import Decimal
 
 logger = logging.getLogger('dtu')
 
@@ -141,10 +142,10 @@ class Request(object):
                         data[bin_parser['name']] = value[idx] == '1'
                     continue
 
-                scale = parser.get('scale', 1)
-                offset = parser.get('offset', 0)
+                scale = Decimal(str(parser.get('scale', 1)))
+                offset = Decimal(str(parser.get('offset', 0)))
 
-                data[parser['name']] = value * scale + offset
+                data[parser['name']] = float(Decimal(str(value)) * scale + offset)
 
         return data
 
