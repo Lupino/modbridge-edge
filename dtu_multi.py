@@ -1,6 +1,7 @@
 import asyncio
 from redis import asyncio as aioredis
 from aio_periodic import Transport, Worker
+from aio_periodic import rsp
 import aiomqtt
 import base64
 from config import host, port, username, password, periodic_port, redis_host
@@ -10,6 +11,8 @@ from typing import Any, Optional, cast
 
 from dtu import process_mqtt_message, ReqMap, Request
 import logging
+
+logger = logging.getLogger('dtu')
 
 worker = Worker()
 req_map: Optional[ReqMap] = None
@@ -74,34 +77,43 @@ class RedisReqMap(ReqMap):
 
 @worker.func('process-dtu-bridge-message')
 async def process_dtu_bridge_message(job: Any) -> None:
+    global req_map, mqtt
     message = json.loads(str(job.workload, 'utf-8'))
     topic = message['topic']
 
     payload = base64.b64decode(message['payload'])
-    if mqtt is None or req_map is None:
-        raise RuntimeError('mqtt or req_map not initialized')
+    if req_map is None:
+        redis = aioredis.from_url(
+            redis_host,
+            encoding='utf-8',
+            decode_responses=True,
+        )  # type: ignore[no-untyped-call]
 
-    await process_mqtt_message(mqtt, req_map, topic, payload)
+        req_map = RedisReqMap(redis)
+
+
+    if mqtt is None:
+        mqtt = aiomqtt.Client(
+                host,
+                port,
+                username=username,
+                password=password,
+        )
+        logger.info('Try connect to mqtt')
+        await mqtt.__aenter__()
+
+    try:
+        await process_mqtt_message(mqtt, req_map, topic, payload)
+    except Exception as exc:
+        logger.exception(exc)
+        mqtt = None
+        return rsp.fail()
+
 
 
 async def main() -> None:
-    global req_map, mqtt
-    redis = aioredis.from_url(
-        redis_host,
-        encoding='utf-8',
-        decode_responses=True,
-    )  # type: ignore[no-untyped-call]
-    req_map = RedisReqMap(redis)
-
-    async with aiomqtt.Client(
-            host,
-            port,
-            username=username,
-            password=password,
-    ) as mqttClient:
-        mqtt = mqttClient
-        await worker.connect(Transport(periodic_port))
-        await worker.work(100)
+    await worker.connect(Transport(periodic_port))
+    await worker.work(100)
 
 
 if __name__ == '__main__':
