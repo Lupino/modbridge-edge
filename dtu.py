@@ -200,6 +200,7 @@ def normal_key(key: str) -> str:
 
 async def forward_dtu(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
     state = data.pop('state', None)
+    params = data.get('params')
 
     if state:
         await mqtt.publish(
@@ -208,8 +209,7 @@ async def forward_dtu(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
             retain=True,
             qos=1,
         )
-
-    params = data.get('params')
+        return
 
     if not params:
         await send_ping(mqtt, ident)
