@@ -7,7 +7,7 @@ import base64
 from config import host, port, username, password, periodic_port, redis_host
 import json
 
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 from dtu import process_mqtt_message, ReqMap, Request
 import logging
@@ -76,7 +76,7 @@ class RedisReqMap(ReqMap):
 
 
 @worker.func('process-dtu-bridge-message')
-async def process_dtu_bridge_message(job: Any) -> None:
+async def process_dtu_bridge_message(job: Any) -> Any:
     global req_map, mqtt
     message = json.loads(str(job.workload, 'utf-8'))
     topic = message['topic']
@@ -91,24 +91,23 @@ async def process_dtu_bridge_message(job: Any) -> None:
 
         req_map = RedisReqMap(redis)
 
-
     if mqtt is None:
         mqtt = aiomqtt.Client(
-                host,
-                port,
-                username=username,
-                password=password,
+            host,
+            port,
+            username=username,
+            password=password,
         )
         logger.info('Try connect to mqtt')
         await mqtt.__aenter__()
 
     try:
         await process_mqtt_message(mqtt, req_map, topic, payload)
+        return rsp.done()
     except Exception as exc:
         logger.exception(exc)
         mqtt = None
         return rsp.fail()
-
 
 
 async def main() -> None:

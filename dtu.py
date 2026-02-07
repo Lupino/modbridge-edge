@@ -29,6 +29,23 @@ def safe_json(data: Any) -> Dict[str, Any]:
         return {}
 
 
+def isinrange(range: Any, value: float) -> bool:
+    value = float(value)
+    max = range.get('max')
+    if max is not None:
+        max = float(max)
+        if value > max:
+            return False
+
+    min = range.get('min')
+    if min is not None:
+        min = float(min)
+        if value < min:
+            return False
+
+    return True
+
+
 async def send_ping(mqtt: Any, ident: str) -> None:
     await mqtt.publish(ident + '/ping')
 
@@ -145,7 +162,44 @@ class Request(object):
                 scale = Decimal(str(parser.get('scale', 1)))
                 offset = Decimal(str(parser.get('offset', 0)))
 
-                data[parser['name']] = float(Decimal(str(value)) * scale + offset)
+                sensor_value = float(Decimal(str(value)) * scale + offset)
+
+                all_filters = parser.get('filters', [])
+
+                if isinstance(all_filters, list) and len(all_filters) > 0:
+                    filters = []
+                    neg_filters = []
+                    for filter in all_filters:
+                        typ = filter.get('type', 'range')
+                        if typ == 'range':
+                            filters.append(filter)
+
+                        if typ == 'range_ignore':
+                            neg_filters.append(filter)
+
+                    if len(filters) > 0:
+                        is_valid = False
+
+                        for filter in filters:
+                            if isinrange(filter, sensor_value):
+                                is_valid = True
+                                break
+
+                        if not is_valid:
+                            continue
+
+                    if len(neg_filters) > 0:
+                        is_valid = True
+
+                        for filter in neg_filters:
+                            if isinrange(filter, sensor_value):
+                                is_valid = False
+                                break
+
+                        if not is_valid:
+                            continue
+
+                data[parser['name']] = sensor_value
 
         return data
 
