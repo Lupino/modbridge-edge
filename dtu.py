@@ -367,13 +367,17 @@ async def process_mqtt_message(mqtt: Any, req_map: ReqMap, topic: str,
                 b'{') and payload.endswith(b'}'):
             await forward_dtu(mqtt, ident, safe_json(payload))
         else:
+            if isinstance(payload, (bytes, bytearray)):
+                raw_payload = payload
+            else:
+                raw_payload = str(payload).encode('utf-8')
+
+            if raw_payload == b'www.usr.cn':
+                return
+
             popped = await req_map.pop(ident)
             if popped is not None:
                 req = popped
-                if isinstance(payload, (bytes, bytearray)):
-                    raw_payload = payload
-                else:
-                    raw_payload = str(payload).encode('utf-8')
                 await forward_response(mqtt, ident, req, raw_payload)
         return
 
