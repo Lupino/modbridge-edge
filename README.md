@@ -15,7 +15,7 @@ It receives cloud requests from MQTT, forwards raw Modbus frames to DTU, then pa
 - Optional Modbus CRC append and CRC verification
   支持可选 CRC 附加与 CRC 校验
 - Flexible parser with byte-order unpacking, scale/offset, and range filters
-  支持字节序解包、scale/offset 转换、区间过滤与忽略区间过滤
+  支持字节序解包、scale/offset 转换、小数位控制、区间过滤与忽略区间过滤
 - Single-process mode (`dtu.py`)
   单进程模式（`dtu.py`）
 - Multi-worker mode (`dtu_multi.py`) with Redis-backed request state
@@ -161,6 +161,7 @@ Other outputs | 其他输出主题：
       "name": "temperature",
       "unpack_func": "uint16_AB",
       "scale": 0.1,
+      "decimal_places": 1,
       "offset": 0,
       "filters": [
         { "type": "range", "min": -40, "max": 85 },

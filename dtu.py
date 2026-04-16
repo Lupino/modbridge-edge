@@ -46,6 +46,47 @@ def isinrange(range: Any, value: float) -> bool:
     return True
 
 
+def get_valid_decimal_places(parser: Dict[str, Any]) -> Optional[int]:
+    """
+    Return a validated decimal places value from parser config.
+
+    Supported keys (priority order):
+    - decimal_places
+    - decimal_point
+
+    Valid values:
+    - int >= 0
+    - numeric string like "2"
+    - float/Decimal representing an integer (e.g. 2.0)
+    """
+    raw = parser.get('decimal_places', parser.get('decimal_point'))
+    if raw is None or isinstance(raw, bool):
+        return None
+
+    places: Optional[int] = None
+    if isinstance(raw, int):
+        places = raw
+    elif isinstance(raw, str):
+        s = raw.strip()
+        if s.isdigit():
+            places = int(s)
+    elif isinstance(raw, float):
+        if raw.is_integer():
+            places = int(raw)
+    elif isinstance(raw, Decimal):
+        if raw == raw.to_integral_value():
+            places = int(raw)
+
+    if places is None or places < 0:
+        return None
+
+    # Keep quantize predictable and avoid unreasonable precision config.
+    if places > 18:
+        return None
+
+    return places
+
+
 async def send_ping(mqtt: Any, ident: str) -> None:
     await mqtt.publish(ident + '/ping')
 
@@ -162,7 +203,14 @@ class Request(object):
                 scale = Decimal(str(parser.get('scale', 1)))
                 offset = Decimal(str(parser.get('offset', 0)))
 
-                sensor_value = float(Decimal(str(value)) * scale + offset)
+                sensor_decimal = Decimal(str(value)) * scale + offset
+
+                decimal_places = get_valid_decimal_places(parser)
+                if decimal_places is not None:
+                    quant = Decimal(1).scaleb(-decimal_places)
+                    sensor_decimal = sensor_decimal.quantize(quant)
+
+                sensor_value = float(sensor_decimal)
 
                 all_filters = parser.get('filters', [])
 
