@@ -3,12 +3,15 @@ import aiomqtt
 import json
 import re
 import crc
+import textwrap
 from config import host, port, username, password
 from modbus_data_handler import ModbusDataHandler
 from time import time
 import logging
 from typing import Any, Dict, Optional, List
 from decimal import Decimal
+
+import pydantic_monty
 
 logger = logging.getLogger('dtu')
 
@@ -153,7 +156,7 @@ class Request(object):
         self.parsers: List[Dict[str, Any]] = parsers or []
         self.expired_at: int = int(time()) + 10
 
-    def parse(self, payload: bytes) -> Dict[str, Any]:
+    async def parse(self, payload: bytes) -> Dict[str, Any]:
         verified = crc.verify_modbus_crc(payload)
         payload_hex = payload.hex()
         data: Dict[str, Any] = {'modbus': payload_hex, 'verified': verified}
@@ -200,17 +203,29 @@ class Request(object):
                         data[bin_parser['name']] = value[idx] == '1'
                     continue
 
+                if unpack_func in ['hex8', 'hex16', 'hex32']:
+                    if isinstance(value, str):
+                        data[parser['name']] = value
+                    continue
+
+                sensor_value = float(value)
+
+                transform = parser.get('transform')
+                if isinstance(transform, str) and transform.strip():
+                    transformed = await apply_transform(parser, value)
+                    if transformed is not None:
+                        sensor_value = transformed
+
                 scale = Decimal(str(parser.get('scale', 1)))
                 offset = Decimal(str(parser.get('offset', 0)))
-
-                sensor_decimal = Decimal(str(value)) * scale + offset
+                sensor_decimal = Decimal(str(sensor_value)) * scale + offset
+                sensor_value = float(sensor_decimal)
 
                 decimal_places = get_valid_decimal_places(parser)
                 if decimal_places is not None:
                     quant = Decimal(1).scaleb(-decimal_places)
-                    sensor_decimal = sensor_decimal.quantize(quant)
-
-                sensor_value = float(sensor_decimal)
+                    sensor_value = float(
+                        Decimal(str(sensor_value)).quantize(quant))
 
                 all_filters = parser.get('filters', [])
 
@@ -252,6 +267,49 @@ class Request(object):
         return data
 
 
+async def apply_transform(
+    parser: Dict[str, Any],
+    raw_value: Any,
+) -> Optional[float]:
+    transform = parser.get('transform')
+    if not isinstance(transform, str):
+        return None
+
+    expr = transform.strip()
+    if not expr:
+        return None
+
+    script = textwrap.dedent(expr).strip()
+    if not script:
+        return None
+
+    type_defs = (
+        'raw_value: float = 0\n'
+    )
+
+    try:
+        monty = pydantic_monty.Monty(
+            script,
+            inputs=['raw_value'],
+            external_functions=[],
+            script_name='parser_transform.py',
+            type_check=True,
+            type_check_stubs=type_defs,
+        )
+        out = await pydantic_monty.run_monty_async(
+            monty,
+            inputs={
+                'raw_value': float(raw_value),
+            },
+            external_functions={},
+        )
+        return float(out)
+    except Exception as exc:
+        logger.exception(exc)
+        logger.warning('transform failed, parser=%s', parser.get('name', ''))
+        return None
+
+
 class ReqMap(object):
 
     async def get(self, ident: str) -> Optional[Request]:
@@ -281,7 +339,7 @@ class DictReqMap(ReqMap):
 
 async def forward_response(mqtt: Any, ident: str, req: Request,
                            payload: bytes) -> None:
-    data = req.parse(payload)
+    data = await req.parse(payload)
     await mqtt.publish(ident + '/response/' + req.id, payload=json.dumps(data))
 
 

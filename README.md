@@ -14,8 +14,8 @@ It receives cloud requests from MQTT, forwards raw Modbus frames to DTU, then pa
   支持原始十六进制或结构化字段组包 Modbus 请求
 - Optional Modbus CRC append and CRC verification
   支持可选 CRC 附加与 CRC 校验
-- Flexible parser with byte-order unpacking, scale/offset, and range filters
-  支持字节序解包、scale/offset 转换、小数位控制、区间过滤与忽略区间过滤
+- Flexible parser with typed unpacking, transform script, scale/offset, decimal control, and range filters
+  支持类型解包、transform 脚本、scale/offset 转换、小数位控制、区间过滤与忽略区间过滤
 - Single-process mode (`dtu.py`)
   单进程模式（`dtu.py`）
 - Multi-worker mode (`dtu_multi.py`) with Redis-backed request state
@@ -172,6 +172,32 @@ Other outputs | 其他输出主题：
 }
 ```
 
+Transform and hex parsing example | transform 与 hex 解析示例：
+
+```json
+{
+  "method": "modbus_req",
+  "addr": "01",
+  "op": "03",
+  "reg": "0000",
+  "data": "0004",
+  "crc": true,
+  "parsers": [
+    {
+      "name": "encoded_decimal",
+      "unpack_func": "uint16_AB",
+      "transform": "digits = str(int(raw_value))\ndecimal_places = int(digits[0])\nmantissa = int(digits[1:])\nmantissa / (10 ** decimal_places)",
+      "scale": 1,
+      "offset": 0
+    },
+    {
+      "name": "status_hex",
+      "unpack_func": "hex16"
+    }
+  ]
+}
+```
+
 Response example | 响应示例：
 
 ```json
@@ -202,3 +228,11 @@ Response example | 响应示例：
   保持主题中的设备标识一致：`/<tenant>/<device>/...`。
 - `unpack_func` must match supported handlers in `modbus_data_handler.py`.
   `unpack_func` 必须与 `modbus_data_handler.py` 中支持的解包函数对应。
+- Supported parser pipeline order: `transform -> scale/offset -> decimal_places -> filters`.
+  parser 执行顺序为：`transform -> scale/offset -> decimal_places -> filters`。
+- `transform` is a full script and receives only `raw_value` as input.
+  `transform` 为完整脚本，仅注入 `raw_value` 变量。
+- `decimal_places` supports alias `decimal_point`.
+  `decimal_places` 支持别名 `decimal_point`。
+- Added unpackers: `hex8`, `hex16`, `hex32` (returned as lowercase hex string, not numeric-converted).
+  新增解包器：`hex8`、`hex16`、`hex32`（返回小写十六进制字符串，不参与数值转换）。

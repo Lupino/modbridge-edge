@@ -1,3 +1,4 @@
 aiomqtt
 redis
 aio_periodic @ git+https://github.com/Lupino/python-aio-periodic.git@8ea517a401cc55a73d207e34054cc69b6458a661
+pydantic_monty @ https://github.com/pydantic/monty.git@33e47c64dcb915f32932d647d853d1cb9a24a1b9

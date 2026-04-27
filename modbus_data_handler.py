@@ -39,6 +39,21 @@ class ModbusDataHandler:
         return '0' * (16 - len(bin16)) + bin16
 
     @staticmethod
+    def unpack_hex8(value: bytes) -> str:
+        """Unpack bytes to fixed-width 8-bit hex string"""
+        return value.hex().zfill(2)
+
+    @staticmethod
+    def unpack_hex16(value: bytes) -> str:
+        """Unpack bytes to fixed-width 16-bit hex string"""
+        return value.hex().zfill(4)
+
+    @staticmethod
+    def unpack_hex32(value: bytes) -> str:
+        """Unpack bytes to fixed-width 32-bit hex string"""
+        return value.hex().zfill(8)
+
+    @staticmethod
     def pack_uint16_AB(value: int) -> bytes:
         """Pack unsigned 16-bit integer, big-endian"""
         return struct.pack('>H', value)
