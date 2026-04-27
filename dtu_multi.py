@@ -40,7 +40,7 @@ def from_json(v: Any) -> str:
 
 def gen_key(ident: str) -> str:
     uuid = ident.split('/')[-1]
-    return f'esp32-dtu-bridge:{uuid}'
+    return f'modbridge-edge:{uuid}'
 
 
 class RedisReqMap(ReqMap):
