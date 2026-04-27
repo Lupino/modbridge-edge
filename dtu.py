@@ -291,7 +291,6 @@ async def apply_transform(
         monty = pydantic_monty.Monty(
             script,
             inputs=['raw_value'],
-            external_functions=[],
             script_name='parser_transform.py',
             type_check=True,
             type_check_stubs=type_defs,
@@ -301,7 +300,6 @@ async def apply_transform(
             inputs={
                 'raw_value': float(raw_value),
             },
-            external_functions={},
         )
         return float(out)
     except Exception as exc:
