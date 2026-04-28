@@ -15,6 +15,20 @@ import pydantic_monty
 
 logger = logging.getLogger('dtu')
 
+UNPACK_BYTE_SIZE = {
+    '8': 1,
+    '16': 2,
+    '32': 4,
+}
+BIN_UNPACK_FUNCS = {'bin8', 'bin16'}
+HEX_UNPACK_FUNCS = {'hex8', 'hex16', 'hex32'}
+RE_SAFE_KEY_CHAR = re.compile('[a-zA-Z0-9_]')
+RE_SPACE = re.compile('[ ]+')
+TOPIC_REQUEST = 'request'
+TOPIC_PONG = 'pong'
+TOPIC_DTU_PUB = 'dtu/pub'
+KEEPALIVE_PAYLOAD = b'www.usr.cn'
+
 
 class InvalidRequest(Exception):
     pass
@@ -22,7 +36,11 @@ class InvalidRequest(Exception):
 
 def safe_json(data: Any) -> Dict[str, Any]:
     try:
-        parsed = json.loads(str(data, 'utf-8', errors='ignore'))
+        if isinstance(data, (bytes, bytearray)):
+            payload = str(data, 'utf-8', errors='ignore')
+        else:
+            payload = str(data)
+        parsed = json.loads(payload)
         if isinstance(parsed, dict):
             return parsed
         return {}
@@ -32,18 +50,18 @@ def safe_json(data: Any) -> Dict[str, Any]:
         return {}
 
 
-def isinrange(range: Any, value: float) -> bool:
+def isinrange(range_config: Any, value: float) -> bool:
     value = float(value)
-    max = range.get('max')
-    if max is not None:
-        max = float(max)
-        if value > max:
+    max_value = range_config.get('max')
+    if max_value is not None:
+        max_value = float(max_value)
+        if value > max_value:
             return False
 
-    min = range.get('min')
-    if min is not None:
-        min = float(min)
-        if value < min:
+    min_value = range_config.get('min')
+    if min_value is not None:
+        min_value = float(min_value)
+        if value < min_value:
             return False
 
     return True
@@ -90,8 +108,116 @@ def get_valid_decimal_places(parser: Dict[str, Any]) -> Optional[int]:
     return places
 
 
+def should_skip_by_filters(all_filters: Any, sensor_value: float) -> bool:
+    if not isinstance(all_filters, list) or len(all_filters) == 0:
+        return False
+
+    filters = []
+    neg_filters = []
+    for filter_item in all_filters:
+        typ = filter_item.get('type', 'range')
+        if typ == 'range':
+            filters.append(filter_item)
+        if typ == 'range_ignore':
+            neg_filters.append(filter_item)
+
+    if len(filters) > 0:
+        is_valid = False
+        for filter_item in filters:
+            if isinrange(filter_item, sensor_value):
+                is_valid = True
+                break
+        if not is_valid:
+            return True
+
+    if len(neg_filters) > 0:
+        is_valid = True
+        for filter_item in neg_filters:
+            if isinrange(filter_item, sensor_value):
+                is_valid = False
+                break
+        if not is_valid:
+            return True
+
+    return False
+
+
+def parse_transform_result(
+    parser: Dict[str, Any],
+    transformed: Any,
+    data: Dict[str, Any],
+) -> Optional[Any]:
+    if not isinstance(transformed, dict):
+        return transformed
+
+    parser_name = str(parser.get('name'))
+    transformed_value = None
+    value_key = None
+    value_keys = ['value', parser_name]
+    for key in value_keys:
+        if key in transformed:
+            value_key = key
+            transformed_value = transformed[key]
+            break
+
+    transformed_rest = {
+        key: val for key, val in transformed.items() if key not in value_keys
+    }
+    if transformed_rest:
+        data.update(transformed_rest)
+
+    if value_key is None:
+        return None
+
+    return transformed_value
+
+
+def read_parser_bytes(mdata: bytes, unpack_func: str) -> tuple[bytes, bytes]:
+    for marker, size in UNPACK_BYTE_SIZE.items():
+        if marker in unpack_func:
+            return mdata[:size], mdata[size:]
+    return b'', mdata
+
+
+def split_ident_and_subtopic(topic: str) -> tuple[str, str]:
+    idx = topic.find('/', 1)
+    idx = topic.find('/', idx + 1)
+    ident = topic[:idx]
+    subtopic = topic[idx:]
+    return ident, subtopic
+
+
+def normalize_payload(payload: Any) -> Any:
+    if isinstance(payload, (bytes, bytearray)):
+        return payload.strip()
+    return str(payload).strip()
+
+
+def to_payload_bytes(payload: Any) -> bytes:
+    if isinstance(payload, (bytes, bytearray)):
+        return bytes(payload)
+    return str(payload).encode('utf-8')
+
+
+def is_json_bytes_payload(payload: Any) -> bool:
+    return (
+        isinstance(payload, (bytes, bytearray))
+        and payload.startswith(b'{')
+        and payload.endswith(b'}')
+    )
+
+
 async def send_ping(mqtt: Any, ident: str) -> None:
     await mqtt.publish(ident + '/ping')
+
+
+def response_topic(ident: str, req_id: str) -> str:
+    return ident + '/response/' + req_id
+
+
+async def publish_json(mqtt: Any, topic: str, data: Dict[str, Any],
+                       **kwargs: Any) -> None:
+    await mqtt.publish(topic, payload=json.dumps(data), **kwargs)
 
 
 async def forward_request(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
@@ -137,12 +263,12 @@ async def forward_request(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
 
 async def send_response_error(mqtt: Any, ident: str, req_id: str) -> None:
     data = {'err': 'Invalid request'}
-    await mqtt.publish(ident + '/response/' + req_id, payload=json.dumps(data))
+    await publish_json(mqtt, response_topic(ident, req_id), data)
 
 
 async def send_response_waiting(mqtt: Any, ident: str, req_id: str) -> None:
     data = {'modbus_state': 'waiting', 'err': 'MODBUS_STATE_WAITING'}
-    await mqtt.publish(ident + '/response/' + req_id, payload=json.dumps(data))
+    await publish_json(mqtt, response_topic(ident, req_id), data)
 
 
 class Request(object):
@@ -168,19 +294,7 @@ class Request(object):
                     break
 
                 unpack_func = parser['unpack_func']
-                curr = b''
-
-                if '8' in unpack_func:
-                    curr = mdata[:1]
-                    mdata = mdata[1:]
-
-                if '16' in unpack_func:
-                    curr = mdata[:2]
-                    mdata = mdata[2:]
-
-                if '32' in unpack_func:
-                    curr = mdata[:4]
-                    mdata = mdata[4:]
+                curr, mdata = read_parser_bytes(mdata, unpack_func)
 
                 if not curr:
                     continue
@@ -192,7 +306,7 @@ class Request(object):
 
                 value = unpack(curr)
 
-                if unpack_func in ['bin8', 'bin16']:
+                if unpack_func in BIN_UNPACK_FUNCS:
                     if not isinstance(value, str):
                         continue
 
@@ -203,7 +317,7 @@ class Request(object):
                         data[bin_parser['name']] = value[idx] == '1'
                     continue
 
-                if unpack_func in ['hex8', 'hex16', 'hex32']:
+                if unpack_func in HEX_UNPACK_FUNCS:
                     if isinstance(value, str):
                         data[parser['name']] = value
                     continue
@@ -214,29 +328,11 @@ class Request(object):
                 if isinstance(transform, str) and transform.strip():
                     transformed = await apply_transform(parser, value)
                     if transformed is not None:
-                        if isinstance(transformed, dict):
-                            parser_name = str(parser.get('name'))
-                            transformed_value = None
-                            value_key = None
-                            value_keys = ['value', parser_name]
-                            for key in value_keys:
-                                if key in transformed:
-                                    value_key = key
-                                    transformed_value = transformed[key]
-                                    break
-                            transformed_rest = {
-                                key: val for key, val in transformed.items()
-                                if key not in value_keys
-                            }
-                            if transformed_rest:
-                                data.update(transformed_rest)
-
-                            if value_key is None:
-                                continue
-
-                            sensor_value = transformed_value
-                        else:
-                            sensor_value = transformed
+                        transformed_value = parse_transform_result(
+                            parser, transformed, data)
+                        if transformed_value is None:
+                            continue
+                        sensor_value = transformed_value
 
                 scale = Decimal(str(parser.get('scale', 1)))
                 offset = Decimal(str(parser.get('offset', 0)))
@@ -250,39 +346,8 @@ class Request(object):
                         Decimal(str(sensor_value)).quantize(quant))
 
                 all_filters = parser.get('filters', [])
-
-                if isinstance(all_filters, list) and len(all_filters) > 0:
-                    filters = []
-                    neg_filters = []
-                    for filter in all_filters:
-                        typ = filter.get('type', 'range')
-                        if typ == 'range':
-                            filters.append(filter)
-
-                        if typ == 'range_ignore':
-                            neg_filters.append(filter)
-
-                    if len(filters) > 0:
-                        is_valid = False
-
-                        for filter in filters:
-                            if isinrange(filter, sensor_value):
-                                is_valid = True
-                                break
-
-                        if not is_valid:
-                            continue
-
-                    if len(neg_filters) > 0:
-                        is_valid = True
-
-                        for filter in neg_filters:
-                            if isinrange(filter, sensor_value):
-                                is_valid = False
-                                break
-
-                        if not is_valid:
-                            continue
+                if should_skip_by_filters(all_filters, sensor_value):
+                    continue
 
                 data[parser['name']] = sensor_value
 
@@ -332,13 +397,13 @@ async def apply_transform(
 class ReqMap(object):
 
     async def get(self, ident: str) -> Optional[Request]:
-        raise Exception("Not implement")
+        raise NotImplementedError("Not implement")
 
     async def set(self, ident: str, req: Request) -> None:
-        raise Exception("Not implement")
+        raise NotImplementedError("Not implement")
 
     async def pop(self, ident: str) -> Optional[Request]:
-        raise Exception("Not implement")
+        raise NotImplementedError("Not implement")
 
 
 class DictReqMap(ReqMap):
@@ -359,22 +424,19 @@ class DictReqMap(ReqMap):
 async def forward_response(mqtt: Any, ident: str, req: Request,
                            payload: bytes) -> None:
     data = await req.parse(payload)
-    await mqtt.publish(ident + '/response/' + req.id, payload=json.dumps(data))
+    await publish_json(mqtt, response_topic(ident, req.id), data)
 
 
 def normal_key(key: str) -> str:
-    re_chr = re.compile('[a-zA-Z0-9_]')
-    re_space = re.compile('[ ]+')
-
     out = ''
     for c in key:
-        if re_chr.search(c):
+        if RE_SAFE_KEY_CHAR.search(c):
             out += c
             continue
 
         out += ' '
 
-    return re_space.sub('_', out)
+    return RE_SPACE.sub('_', out)
 
 
 async def forward_dtu(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
@@ -382,9 +444,10 @@ async def forward_dtu(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
     params = data.get('params')
 
     if state:
-        await mqtt.publish(
+        await publish_json(
+            mqtt,
             ident + '/attributes',
-            payload=json.dumps({'state': state}),
+            {'state': state},
             retain=True,
             qos=1,
         )
@@ -397,23 +460,16 @@ async def forward_dtu(mqtt: Any, ident: str, data: Dict[str, Any]) -> None:
     out: Dict[str, Any] = {}
     for k, v in params.items():
         out[normal_key(k)] = v
-    await mqtt.publish(ident + '/telemetry', payload=json.dumps(out))
+    await publish_json(mqtt, ident + '/telemetry', out)
 
 
 async def process_mqtt_message(mqtt: Any, req_map: ReqMap, topic: str,
                                payload: Any) -> None:
-    idx = topic.find('/', 1)
-    idx = topic.find('/', idx + 1)
-    ident = topic[:idx]
+    ident, topic = split_ident_and_subtopic(topic)
     logger.debug('Device: ' + ident)
-    topic = topic[idx:]
+    payload = normalize_payload(payload)
 
-    if isinstance(payload, (bytes, bytearray)):
-        payload = payload.strip()
-    else:
-        payload = str(payload).strip()
-
-    if topic.find('request') > -1:
+    if TOPIC_REQUEST in topic:
         req_id = topic.split('/')[-1]
         data = safe_json(payload)
         method = data.get('method')
@@ -436,20 +492,16 @@ async def process_mqtt_message(mqtt: Any, req_map: ReqMap, topic: str,
 
         return
 
-    if topic.find('pong') > -1:
+    if TOPIC_PONG in topic:
         return
 
-    if topic.find('dtu/pub') > -1:
-        if isinstance(payload, (bytes, bytearray)) and payload.startswith(
-                b'{') and payload.endswith(b'}'):
+    if TOPIC_DTU_PUB in topic:
+        if is_json_bytes_payload(payload):
             await forward_dtu(mqtt, ident, safe_json(payload))
         else:
-            if isinstance(payload, (bytes, bytearray)):
-                raw_payload = payload
-            else:
-                raw_payload = str(payload).encode('utf-8')
+            raw_payload = to_payload_bytes(payload)
 
-            if raw_payload == b'www.usr.cn':
+            if raw_payload == KEEPALIVE_PAYLOAD:
                 return
 
             popped = await req_map.pop(ident)

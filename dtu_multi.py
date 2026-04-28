@@ -17,30 +17,30 @@ logger = logging.getLogger('dtu')
 worker = Worker()
 req_map: Optional[ReqMap] = None
 mqtt: Optional[aiomqtt.Client] = None
+REDIS_KEY_PREFIX = 'modbridge-edge:'
+REDIS_REQ_TTL = 20
 
 
-def to_str(v: bytes | str) -> str:
-    if isinstance(v, bytes):
+def to_str(v: bytes | bytearray | str) -> str:
+    if isinstance(v, (bytes, bytearray)):
         return str(v, 'utf-8')
-    else:
-        return v
+    return v
 
 
-def to_json(v: bytes) -> Any:
+def to_json(v: bytes | str | None) -> Any:
+    if v is None:
+        return None
+
     s = to_str(v)
     if s:
         return json.loads(s)
 
-    return v
-
-
-def from_json(v: Any) -> str:
-    return json.dumps(v)
+    return None
 
 
 def gen_key(ident: str) -> str:
     uuid = ident.split('/')[-1]
-    return f'modbridge-edge:{uuid}'
+    return f'{REDIS_KEY_PREFIX}{uuid}'
 
 
 class RedisReqMap(ReqMap):
@@ -66,7 +66,7 @@ class RedisReqMap(ReqMap):
             'expired_at': req.expired_at,
         }
 
-        await self.redis.setex(key, 20, json.dumps(data))
+        await self.redis.setex(key, REDIS_REQ_TTL, json.dumps(data))
 
     async def pop(self, ident: str) -> Optional[Request]:
         req = await self.get(ident)

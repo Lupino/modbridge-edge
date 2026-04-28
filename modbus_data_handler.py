@@ -17,6 +17,52 @@ class ModbusDataHandler:
     """
 
     @staticmethod
+    def _unpack_bit_string(value: bytes, fmt: str, width: int) -> str:
+        raw = bin(struct.unpack(fmt, value)[0])[2:]
+        return raw.zfill(width)
+
+    @staticmethod
+    def _unpack_hex_string(value: bytes, width: int) -> str:
+        return value.hex().zfill(width)
+
+    @staticmethod
+    def _bcd_digits_to_int(digits: list[int]) -> int:
+        result = 0
+        for digit in digits:
+            result = result * 10 + digit
+        return result
+
+    @staticmethod
+    def _bcd_int_to_digits(value: int, digit_count: int) -> list[int]:
+        digits = []
+        temp = value
+        for _ in range(digit_count):
+            digits.append(temp % 10)
+            temp //= 10
+        digits.reverse()
+        return digits
+
+    @staticmethod
+    def _bcd_bytes_to_digits(data: bytes) -> list[int]:
+        digits = []
+        for byte_val in data:
+            high_digit = (byte_val >> 4) & 0x0F
+            low_digit = byte_val & 0x0F
+
+            if high_digit > 9 or low_digit > 9:
+                raise ValueError("Invalid BCD data")
+
+            digits.extend([high_digit, low_digit])
+        return digits
+
+    @staticmethod
+    def _bcd_digits_to_bytes(digits: list[int]) -> bytes:
+        bytes_data = []
+        for i in range(0, len(digits), 2):
+            bytes_data.append((digits[i] << 4) | digits[i + 1])
+        return bytes(bytes_data)
+
+    @staticmethod
     def pack_uint8(value: int) -> bytes:
         """Pack unsigned 8-bit integer"""
         return struct.pack('B', value)
@@ -29,29 +75,27 @@ class ModbusDataHandler:
     @staticmethod
     def unpack_bin8(value: bytes) -> str:
         """Unpack unsigned 8-bit integer to bin"""
-        bin8 = bin(struct.unpack('B', value)[0])[2:]
-        return '0' * (8 - len(bin8)) + bin8
+        return ModbusDataHandler._unpack_bit_string(value, 'B', 8)
 
     @staticmethod
     def unpack_bin16(value: bytes) -> str:
         """Unpack unsigned 16-bit integer to bin"""
-        bin16 = bin(struct.unpack('>H', value)[0])[2:]
-        return '0' * (16 - len(bin16)) + bin16
+        return ModbusDataHandler._unpack_bit_string(value, '>H', 16)
 
     @staticmethod
     def unpack_hex8(value: bytes) -> str:
         """Unpack bytes to fixed-width 8-bit hex string"""
-        return value.hex().zfill(2)
+        return ModbusDataHandler._unpack_hex_string(value, 2)
 
     @staticmethod
     def unpack_hex16(value: bytes) -> str:
         """Unpack bytes to fixed-width 16-bit hex string"""
-        return value.hex().zfill(4)
+        return ModbusDataHandler._unpack_hex_string(value, 4)
 
     @staticmethod
     def unpack_hex32(value: bytes) -> str:
         """Unpack bytes to fixed-width 32-bit hex string"""
-        return value.hex().zfill(8)
+        return ModbusDataHandler._unpack_hex_string(value, 8)
 
     @staticmethod
     def pack_uint16_AB(value: int) -> bytes:
@@ -252,38 +296,14 @@ class ModbusDataHandler:
         if not 0 <= value <= 9999:
             raise ValueError("BCD16 value must be between 0 and 9999")
 
-        # Convert to 4 BCD digits
-        digit1 = (value // 1000) % 10
-        digit2 = (value // 100) % 10
-        digit3 = (value // 10) % 10
-        digit4 = value % 10
-
-        # Pack as two bytes: high byte = digit1|digit2,
-        # low byte = digit3|digit4
-        high_byte = (digit1 << 4) | digit2
-        low_byte = (digit3 << 4) | digit4
-
-        return struct.pack('BB', high_byte, low_byte)
+        digits = ModbusDataHandler._bcd_int_to_digits(value, 4)
+        return ModbusDataHandler._bcd_digits_to_bytes(digits)
 
     @staticmethod
     def unpack_bcd16(data: bytes) -> int:
         """Unpack 16-bit BCD (Binary Coded Decimal)"""
-        hb, lb = struct.unpack('BB', data)
-
-        high_byte = int(hb)
-        low_byte = int(lb)
-
-        # Extract BCD digits
-        digit1 = (high_byte >> 4) & 0x0F
-        digit2 = high_byte & 0x0F
-        digit3 = (low_byte >> 4) & 0x0F
-        digit4 = low_byte & 0x0F
-
-        # Validate BCD digits
-        if any(digit > 9 for digit in [digit1, digit2, digit3, digit4]):
-            raise ValueError("Invalid BCD data")
-
-        return digit1 * 1000 + digit2 * 100 + digit3 * 10 + digit4
+        digits = ModbusDataHandler._bcd_bytes_to_digits(data)
+        return ModbusDataHandler._bcd_digits_to_int(digits)
 
     @staticmethod
     def pack_bcd32(value: int) -> bytes:
@@ -291,50 +311,14 @@ class ModbusDataHandler:
         if not 0 <= value <= 99999999:
             raise ValueError("BCD32 value must be between 0 and 99999999")
 
-        # Convert to 8 BCD digits
-        digits = []
-        temp = value
-        for i in range(8):
-            digits.append(temp % 10)
-            temp //= 10
-        digits.reverse()  # Most significant digit first
-
-        # Pack as four bytes
-        bytes_data = []
-        for i in range(0, 8, 2):
-            byte_val = (digits[i] << 4) | digits[i + 1]
-            bytes_data.append(byte_val)
-
-        return struct.pack('BBBB', *bytes_data)
+        digits = ModbusDataHandler._bcd_int_to_digits(value, 8)
+        return ModbusDataHandler._bcd_digits_to_bytes(digits)
 
     @staticmethod
     def unpack_bcd32(data: bytes) -> int:
         """Unpack 32-bit BCD (Binary Coded Decimal)"""
-        b1, b2, b3, b4 = struct.unpack('BBBB', data)
-
-        byte1 = int(b1)
-        byte2 = int(b2)
-        byte3 = int(b3)
-        byte4 = int(b4)
-
-        # Extract BCD digits from each byte
-        digits = []
-        for byte_val in [byte1, byte2, byte3, byte4]:
-            high_digit = (byte_val >> 4) & 0x0F
-            low_digit = byte_val & 0x0F
-
-            # Validate BCD digits
-            if high_digit > 9 or low_digit > 9:
-                raise ValueError("Invalid BCD data")
-
-            digits.extend([high_digit, low_digit])
-
-        # Convert BCD digits to integer
-        result = 0
-        for digit in digits:
-            result = result * 10 + digit
-
-        return result
+        digits = ModbusDataHandler._bcd_bytes_to_digits(data)
+        return ModbusDataHandler._bcd_digits_to_int(digits)
 
 
 # Example usage and test functions
