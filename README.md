@@ -186,7 +186,7 @@ Transform and hex parsing example | transform 与 hex 解析示例：
     {
       "name": "encoded_decimal",
       "unpack_func": "uint16_AB",
-      "transform": "digits = str(int(raw_value))\ndecimal_places = int(digits[0])\nmantissa = int(digits[1:])\nmantissa / (10 ** decimal_places)",
+      "transform": "digits = str(int(raw_value))\ndecimal_places = int(digits[0])\nmantissa = int(digits[1:])\n{\n  'value': mantissa / (10 ** decimal_places),\n  'decimal_places': decimal_places,\n  'raw_digits': digits\n}",
       "scale": 1,
       "offset": 0
     },
@@ -232,6 +232,12 @@ Response example | 响应示例：
   parser 执行顺序为：`transform -> scale/offset -> decimal_places -> filters`。
 - `transform` is a full script and receives only `raw_value` as input.
   `transform` 为完整脚本，仅注入 `raw_value` 变量。
+- `transform` return value supports two forms:
+  `transform` 返回值支持两种形式：
+  - number: continue normal pipeline `scale/offset -> decimal_places -> filters`
+    数值：按正常流程继续 `scale/offset -> decimal_places -> filters`
+  - object/dict: keys except `value` are merged directly into response; if `value` exists, it continues numeric pipeline, otherwise this parser's main value is skipped
+    对象/字典：除 `value` 外的字段会直接合并进响应；若包含 `value` 则继续数值处理流程，否则跳过该 parser 的主值输出
 - `decimal_places` supports alias `decimal_point`.
   `decimal_places` 支持别名 `decimal_point`。
 - Added unpackers: `hex8`, `hex16`, `hex32` (returned as lowercase hex string, not numeric-converted).

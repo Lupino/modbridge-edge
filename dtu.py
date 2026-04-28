@@ -214,7 +214,19 @@ class Request(object):
                 if isinstance(transform, str) and transform.strip():
                     transformed = await apply_transform(parser, value)
                     if transformed is not None:
-                        sensor_value = transformed
+                        if isinstance(transformed, dict):
+                            transformed_value = transformed.get('value', None)
+                            transformed_rest = {
+                                key: val for key, val in transformed.items()
+                                if key != 'value'
+                            }
+                            if transformed_rest:
+                                data.update(transformed_rest)
+                            if 'value' not in transformed:
+                                continue
+                            sensor_value = transformed_value
+                        else:
+                            sensor_value = transformed
 
                 scale = Decimal(str(parser.get('scale', 1)))
                 offset = Decimal(str(parser.get('offset', 0)))
@@ -270,7 +282,7 @@ class Request(object):
 async def apply_transform(
     parser: Dict[str, Any],
     raw_value: Any,
-) -> Optional[float]:
+) -> Optional[Any]:
     transform = parser.get('transform')
     if not isinstance(transform, str):
         return None
@@ -301,7 +313,7 @@ async def apply_transform(
                 'raw_value': float(raw_value),
             },
         )
-        return float(out)
+        return out
     except Exception as exc:
         logger.exception(exc)
         logger.warning('transform failed, parser=%s', parser.get('name', ''))
