@@ -215,15 +215,25 @@ class Request(object):
                     transformed = await apply_transform(parser, value)
                     if transformed is not None:
                         if isinstance(transformed, dict):
-                            transformed_value = transformed.get('value', None)
+                            parser_name = str(parser.get('name'))
+                            transformed_value = None
+                            value_key = None
+                            value_keys = ['value', parser_name]
+                            for key in value_keys:
+                                if key in transformed:
+                                    value_key = key
+                                    transformed_value = transformed[key]
+                                    break
                             transformed_rest = {
                                 key: val for key, val in transformed.items()
-                                if key != 'value'
+                                if key not in value_keys
                             }
                             if transformed_rest:
                                 data.update(transformed_rest)
-                            if 'value' not in transformed:
+
+                            if value_key is None:
                                 continue
+
                             sensor_value = transformed_value
                         else:
                             sensor_value = transformed
