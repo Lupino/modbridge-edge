@@ -307,8 +307,7 @@ async def apply_transform(
             type_check=True,
             type_check_stubs=type_defs,
         )
-        out = await pydantic_monty.run_monty_async(
-            monty,
+        out = await monty.run_async(
             inputs={
                 'raw_value': float(raw_value),
             },
