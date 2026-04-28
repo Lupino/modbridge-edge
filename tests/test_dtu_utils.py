@@ -6,7 +6,8 @@ if 'aiomqtt' not in sys.modules:
     sys.modules['aiomqtt'] = types.ModuleType('aiomqtt')
 
 from dtu import (get_valid_decimal_places, is_json_bytes_payload, isinrange,
-                 normal_key, normalize_payload, read_parser_bytes,
+                 normal_key, normalize_payload, parse_transform_result,
+                 read_parser_bytes,
                  should_skip_by_filters,
                  split_ident_and_subtopic, to_payload_bytes)
 
@@ -73,6 +74,36 @@ class DtuUtilsTest(unittest.TestCase):
         self.assertTrue(isinrange({'min': 0, 'max': 10}, 10))
         self.assertFalse(isinrange({'min': 0, 'max': 10}, -0.1))
         self.assertFalse(isinrange({'min': 0, 'max': 10}, 10.1))
+
+    def test_parse_transform_result(self) -> None:
+        parser = {'name': 'temperature_c'}
+
+        data_a = {'modbus': 'xx'}
+        out_a = parse_transform_result(
+            parser,
+            {'value': 1.1, 'extra': 123},
+            data_a,
+        )
+        self.assertEqual(out_a, 1.1)
+        self.assertEqual(data_a['extra'], 123)
+
+        data_b = {'modbus': 'xx'}
+        out_b = parse_transform_result(
+            parser,
+            {'temperature_c': 2.2, 'unit': 'C'},
+            data_b,
+        )
+        self.assertEqual(out_b, 2.2)
+        self.assertEqual(data_b['unit'], 'C')
+
+        data_c = {'modbus': 'xx'}
+        out_c = parse_transform_result(
+            parser,
+            {'aux': 999},
+            data_c,
+        )
+        self.assertIsNone(out_c)
+        self.assertEqual(data_c['aux'], 999)
 
 
 if __name__ == '__main__':

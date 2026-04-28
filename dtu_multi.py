@@ -9,7 +9,8 @@ import json
 
 from typing import Any, Optional
 
-from dtu import process_mqtt_message, ReqMap, Request
+from dtu import (ReqMap, Request, apply_transform, parse_transform_result,
+                 process_mqtt_message)
 import logging
 
 logger = logging.getLogger('dtu')
@@ -75,8 +76,8 @@ class RedisReqMap(ReqMap):
         return req
 
 
-@worker.func('process-dtu-bridge-message')
-async def process_dtu_bridge_message(job: Any) -> Any:
+@worker.func('process-bridged-mqtt-message')
+async def process_bridged_mqtt_message(job: Any) -> Any:
     global req_map, mqtt
     message = json.loads(str(job.workload, 'utf-8'))
     topic = message['topic']
@@ -108,6 +109,45 @@ async def process_dtu_bridge_message(job: Any) -> Any:
         logger.exception(exc)
         mqtt = None
         return rsp.fail()
+
+
+@worker.func('modbridge-edge-transform')
+async def test_parser_transform(job: Any) -> Any:
+
+    def done_error(message: str) -> Any:
+        return rsp.done({
+            'ok': False,
+            'error': message,
+        })
+
+    try:
+        message = json.loads(str(job.workload, 'utf-8'))
+        parser = message.get('parser')
+        if not isinstance(parser, dict):
+            logger.error('invalid transform test input: parser is required')
+            return done_error('invalid input: parser(dict) is required')
+
+        raw_value = message.get('raw_value')
+        data = message.get('data', {})
+        if not isinstance(data, dict):
+            data = {}
+
+        transformed = await apply_transform(parser, raw_value)
+        if transformed is None:
+            return done_error(
+                'transform failed: check parser.transform script and raw_value'
+            )
+
+        value = parse_transform_result(parser, transformed, data)
+        return rsp.done({
+            'ok': True,
+            'transformed': transformed,
+            'value': value,
+            'data': data,
+        })
+    except Exception as exc:
+        logger.exception(exc)
+        return done_error(f'{type(exc).__name__}: {exc}')
 
 
 async def main() -> None:

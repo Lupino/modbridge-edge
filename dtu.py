@@ -161,7 +161,8 @@ def parse_transform_result(
             break
 
     transformed_rest = {
-        key: val for key, val in transformed.items() if key not in value_keys
+        key: val
+        for key, val in transformed.items() if key not in value_keys
     }
     if transformed_rest:
         data.update(transformed_rest)
@@ -200,11 +201,8 @@ def to_payload_bytes(payload: Any) -> bytes:
 
 
 def is_json_bytes_payload(payload: Any) -> bool:
-    return (
-        isinstance(payload, (bytes, bytearray))
-        and payload.startswith(b'{')
-        and payload.endswith(b'}')
-    )
+    return (isinstance(payload, (bytes, bytearray))
+            and payload.startswith(b'{') and payload.endswith(b'}'))
 
 
 async def send_ping(mqtt: Any, ident: str) -> None:
@@ -370,9 +368,7 @@ async def apply_transform(
     if not script:
         return None
 
-    type_defs = (
-        'raw_value: float = 0\n'
-    )
+    type_defs = ('raw_value: float = 0\n')
 
     try:
         monty = pydantic_monty.Monty(
@@ -382,11 +378,9 @@ async def apply_transform(
             type_check=True,
             type_check_stubs=type_defs,
         )
-        out = await monty.run_async(
-            inputs={
-                'raw_value': float(raw_value),
-            },
-        )
+        out = await monty.run_async(inputs={
+            'raw_value': float(raw_value),
+        }, )
         return out
     except Exception as exc:
         logger.exception(exc)
